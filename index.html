@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Through the Barrier — An Interactive Story of Quantum Tunneling</title>
+<meta name="description" content="Six connected dynamic views that explain quantum tunneling through a finite rectangular barrier: classical expectation, wavefunction, probability density, reflection vs. transmission, parameter explorer, and scenario comparison.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+<script src="https://cdn.plot.ly/plotly-2.35.2.min.js" charset="utf-8"></script>
+</head>
+<body>
+
+<header class="hero">
+  <div class="hero-glow"></div>
+  <p class="eyebrow">CPS 5745 · Dynamic Scientific Storytelling · Midterm Project</p>
+  <h1>Through the Barrier</h1>
+  <p class="subtitle">An interactive story of quantum tunneling</p>
+  <p class="question">How can a quantum particle have a nonzero probability of crossing a barrier it
+    classically cannot — and which physical parameters control that probability?</p>
+  <p class="byline">Karina Ponze · Kean University</p>
+</header>
+
+<!-- ================= sticky control panel ================= -->
+<aside class="controls" id="controls" aria-label="Shared model controls">
+  <div class="ctl-title">Shared parameters <span class="hint">every view updates together</span></div>
+  <div class="ctl-grid">
+    <label class="ctl" for="E-range"><span>Particle energy <b>E</b> (eV)</span>
+      <div class="ctl-row"><input type="range" id="E-range" min="0.5" max="15" step="0.1" value="8">
+      <input type="number" id="E-num" min="0.01" step="0.1" value="8"></div></label>
+    <label class="ctl" for="V0-range"><span>Barrier height <b>V₀</b> (eV)</span>
+      <div class="ctl-row"><input type="range" id="V0-range" min="1" max="20" step="0.1" value="10">
+      <input type="number" id="V0-num" min="0.01" step="0.1" value="10"></div></label>
+    <label class="ctl" for="a-range"><span>Barrier width <b>a</b> (nm)</span>
+      <div class="ctl-row"><input type="range" id="a-range" min="0.02" max="1" step="0.01" value="0.1">
+      <input type="number" id="a-num" min="0.001" step="0.01" value="0.1"></div></label>
+    <div class="ctl-actions">
+      <button id="reset-btn" class="btn ghost" title="Restore E = 8, V₀ = 10, a = 0.10">↺ Reset</button>
+      <div id="regime-pill" class="pill">—</div>
+    </div>
+  </div>
+  <div id="error-box" class="error-box" role="alert" hidden></div>
+</aside>
+
+<main>
+
+<!-- ============ BEGINNING ============ -->
+<section class="act" id="act1">
+  <div class="act-label">Act I · The question</div>
+
+  <article class="view" id="view1">
+    <div class="view-head"><span class="num">1</span>
+      <div><h2>Classical expectation</h2>
+      <p class="q">Should the particle get through, according to classical mechanics?</p></div></div>
+    <div class="view-body">
+      <div class="plot-wrap"><div id="plot1" class="plot"></div></div>
+      <div class="side">
+        <div class="verdict" id="classical-verdict"></div>
+        <div class="mini-compare">
+          <div><span class="lbl">Classical T</span><b id="v1-classical-T">—</b></div>
+          <div><span class="lbl">Quantum T</span><b id="v1-quantum-T">—</b></div>
+        </div>
+        <p class="note">Classically a particle is either reflected (E &lt; V₀) or passes (E &gt; V₀) — T is exactly 0 or 1. Move <b>E</b> across <b>V₀</b>, then watch what quantum mechanics predicts instead.</p>
+        <p class="note warn">The diagram plots <b>potential energy</b>. The barrier is <i>not</i> a physical wall, and <b>E</b> (dashed line) is the particle's total energy.</p>
+      </div>
+    </div>
+  </article>
+</section>
+
+<!-- ============ MIDDLE ============ -->
+<section class="act" id="act2">
+  <div class="act-label">Act II · The mechanism</div>
+
+  <article class="view" id="view2">
+    <div class="view-head"><span class="num">2</span>
+      <div><h2>Quantum wavefunction</h2>
+      <p class="q">What changes when the particle is a quantum scattering state?</p></div></div>
+    <div class="view-body">
+      <div class="plot-wrap">
+        <div id="plot2" class="plot"></div>
+        <div class="player" aria-label="Phase animation controls">
+          <button id="play-btn" class="btn">▶ Play</button>
+          <button id="step-btn" class="btn ghost">⏭ Step</button>
+          <button id="phase-reset-btn" class="btn ghost">⟲ Phase 0</button>
+          <label class="speed">Speed <input type="range" id="speed-range" min="0.2" max="3" step="0.1" value="1"></label>
+          <span id="phase-readout" class="readout">φ = 0.00 π</span>
+        </div>
+      </div>
+      <div class="side">
+        <div class="region-card" id="region-card"></div>
+        <p class="note">Solid line: <b>Re[ψ(x)·e<sup>−iφ</sup>]</b>. The shaded envelope is |ψ(x)|, which does <i>not</i> move.</p>
+        <p class="note warn">The animation is the <b>phase evolution of a stationary state</b> (e<sup>−iEt/ħ</sup> → φ). It is <i>not</i> a particle trajectory and the displayed R and T never depend on it.</p>
+      </div>
+    </div>
+  </article>
+
+  <article class="view" id="view3">
+    <div class="view-head"><span class="num">3</span>
+      <div><h2>Relative probability density</h2>
+      <p class="q">How does the magnitude of the quantum state vary across the barrier?</p></div></div>
+    <div class="view-body">
+      <div class="plot-wrap"><div id="plot3" class="plot"></div></div>
+      <div class="side">
+        <div class="stat-list" id="v3-stats"></div>
+        <p class="note">Hover to read actual values. Left of the barrier, incident and reflected waves interfere, so |ψ|² ripples between (1−√R)² and (1+√R)². Right of the barrier it is flat at <b>T</b>.</p>
+        <p class="note warn">Scattering states are not square-normalizable, so |ψ|² is a <b>relative</b> density (incident amplitude = 1), not an absolute position probability.</p>
+      </div>
+    </div>
+  </article>
+
+  <article class="view" id="view4">
+    <div class="view-head"><span class="num">4</span>
+      <div><h2>Reflection versus transmission</h2>
+      <p class="q">How much of the incident probability current is reflected, and how much transmitted?</p></div></div>
+    <div class="view-body">
+      <div class="plot-wrap"><div id="plot4" class="plot short"></div></div>
+      <div class="side">
+        <div class="stat-list" id="v4-stats"></div>
+        <p class="note">R and T are computed two ways: from the closed-form formula and from the solved wavefunction coefficients (|B|², |F|²). Their agreement and R + T = 1 are shown live.</p>
+        <p class="note warn"><b>Tunneling does not cost energy.</b> A transmitted particle leaves with the same E it arrived with; only the <i>probability</i> of transmission is reduced.</p>
+      </div>
+    </div>
+  </article>
+
+  <article class="view" id="view5">
+    <div class="view-head"><span class="num">5</span>
+      <div><h2>Barrier parameter explorer</h2>
+      <p class="q">How sensitive is tunneling to barrier height and width?</p></div></div>
+    <div class="view-body">
+      <div class="plot-wrap">
+        <div class="toggle-row">
+          <div class="seg" role="group" aria-label="View 5 representation">
+            <button id="seg-2d" class="seg-btn active">2D heatmap</button>
+            <button id="seg-3d" class="seg-btn">3D surface</button>
+          </div>
+          <span class="readout">Click the map to move the marker (sets V₀ and a)</span>
+        </div>
+        <div id="plot5" class="plot tall"></div>
+      </div>
+      <div class="side">
+        <div class="stat-list" id="v5-stats"></div>
+        <p class="note">Color is <b>log₁₀(T)</b>, not T: transmission spans many orders of magnitude, so a linear scale would hide small but real values. <b>Equal color steps mean equal <i>ratios</i> of T.</b> The slider E sets the energy for the whole map.</p>
+        <p class="note">The 3D surface is offered as an alternative per the approved proposal; the 2D map stays primary because exact values are easier to read.</p>
+      </div>
+    </div>
+  </article>
+</section>
+
+<!-- ============ ENDING ============ -->
+<section class="act" id="act3">
+  <div class="act-label">Act III · The evidence</div>
+
+  <article class="view" id="view6">
+    <div class="view-head"><span class="num">6</span>
+      <div><h2>Scenario comparison &amp; takeaway</h2>
+      <p class="q">Which conditions make tunneling more or less likely?</p></div></div>
+
+    <div class="scn-toolbar">
+      <div class="scn-block"><span class="tag a">A</span>
+        <button id="save-a" class="btn small">Save current → A</button>
+        <button id="apply-a" class="btn small ghost">Apply A</button></div>
+      <div class="scn-block"><span class="tag b">B</span>
+        <button id="save-b" class="btn small">Save current → B</button>
+        <button id="apply-b" class="btn small ghost">Apply B</button></div>
+      <div class="scn-block presets"><span class="lbl">Preset →</span>
+        <select id="preset-select" aria-label="Preset scenario"></select>
+        <button id="preset-a" class="btn small ghost">to A</button>
+        <button id="preset-b" class="btn small ghost">to B</button></div>
+      <label class="check"><input type="checkbox" id="log-T"> log scale for T</label>
+    </div>
+
+    <div class="view-body two">
+      <div class="plot-wrap"><div id="plot6a" class="plot tall"></div></div>
+      <div class="plot-wrap"><div id="plot6b" class="plot"></div>
+        <div id="scn-table" class="scn-table"></div></div>
+    </div>
+    <div class="view-body">
+      <div class="plot-wrap"><div id="plot6c" class="plot short"></div></div>
+      <div class="side">
+        <div class="takeaway" id="takeaway"></div>
+        <p class="note">The sensitivity bars change each parameter by ±10 % around the <b>current</b> controls and report the change in log₁₀(T) — a direct answer to “which variable matters most here?”.</p>
+      </div>
+    </div>
+  </article>
+</section>
+
+<!-- ============ VERIFICATION ============ -->
+<section class="act" id="verify">
+  <div class="act-label">Evidence · Verification (runs live in your browser)</div>
+  <article class="view">
+    <div class="view-head"><span class="num v">✓</span>
+      <div><h2>Numerical example &amp; boundary checks</h2>
+      <p class="q">Does the implementation reproduce known physics?</p></div></div>
+    <div class="verify-wrap"><table id="verify-table" class="vt"></table></div>
+    <div class="model-box">
+      <h3>Model, variables, and assumptions</h3>
+      <p>Time-independent Schrödinger equation for an electron (m = 9.109 × 10⁻³¹ kg) on a rectangular barrier V(x) = V₀ for 0 ≤ x ≤ a, else 0.
+         κ = √(2m(V₀−E))/ħ;&nbsp; T = [1 + V₀² sinh²(κa) / (4E(V₀−E))]⁻¹ for E &lt; V₀;&nbsp;
+         T = [1 + V₀² sin²(qa) / (4E(E−V₀))]⁻¹ for E &gt; V₀;&nbsp; T = [1 + mV₀a²/(2ħ²)]⁻¹ at E = V₀;&nbsp; R + T = 1.</p>
+      <table class="vt small">
+        <tr><th>Variable</th><th>Meaning</th><th>Unit</th><th>Range</th></tr>
+        <tr><td>E</td><td>Particle energy</td><td>eV</td><td>0.5 – 15 (inputs &gt; 0)</td></tr>
+        <tr><td>V₀</td><td>Barrier height</td><td>eV</td><td>1 – 20</td></tr>
+        <tr><td>a</td><td>Barrier width</td><td>nm</td><td>0.02 – 1</td></tr>
+        <tr><td>ψ(x)</td><td>Wavefunction (A = 1)</td><td>arb.</td><td>—</td></tr>
+        <tr><td>|ψ|²</td><td>Relative probability density</td><td>arb.</td><td>—</td></tr>
+        <tr><td>T, R</td><td>Transmission / reflection probability</td><td>—</td><td>[0, 1]</td></tr>
+      </table>
+      <p class="note"><b>Limitations.</b> Idealized 1D rectangular barrier, one electron, stationary scattering states. No decoherence, many-body effects, realistic materials, or arbitrary time-dependent potentials. |ψ|² is relative, not absolute.</p>
+    </div>
+  </article>
+</section>
+</main>
+
+<footer>
+  <p><b>Through the Barrier</b> · Karina Ponze · CPS 5745 Midterm Project · Sources: Griffiths &amp; Schroeter (2018); OpenStax <i>University Physics Vol. 3</i> §7.6; McKagan, Perkins &amp; Wieman (2008); Wittmann, Morgan &amp; Bao (2005); PhET Quantum Tunneling and Wave Packets.</p>
+  <p class="dim">Generative AI assisted with implementation scaffolding; all equations were checked against the cited sources and an independent Python reference (see <code>tests/</code>).</p>
+</footer>
+
+<script src="physics.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
