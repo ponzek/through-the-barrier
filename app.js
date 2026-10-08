@@ -395,6 +395,7 @@
     $("v5-click-help").textContent = mode5 === "2d"
       ? "Click the 2D map or a dataset square to load that state"
       : "3D is for visual inspection; switch to 2D to click/load dataset squares";
+    if (view5.lastMode !== mode5) { Plotly.purge("plot5"); view5.lastMode = mode5; }   // xy <-> scene switch needs a clean div
     Plotly.react("plot5", data, layout, CFG);
     const gd = $("plot5");
     gd.removeAllListeners && gd.removeAllListeners("plotly_click");
@@ -417,7 +418,7 @@
       (recs.length ? s("Dataset squares on map", recs.length + " (click one to load it)") : "");
   }
   $("seg-2d").addEventListener("click", () => { mode5 = "2d"; $("seg-2d").classList.add("active"); $("seg-3d").classList.remove("active"); if (cache.cur) view5(cache.cur.st); });
-  $("seg-3d").addEventListener("click", () => { mode5 = "2d"; $("seg-2d").classList.add("active"); $("seg-3d").classList.remove("active"); if (cache.cur) view5(cache.cur.st); });
+  $("seg-3d").addEventListener("click", () => { mode5 = "3d"; $("seg-3d").classList.add("active"); $("seg-2d").classList.remove("active"); if (cache.cur) view5(cache.cur.st); });
 
   // ======================= VIEW 6 =======================
   const sel = $("preset-select");

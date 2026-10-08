@@ -33,7 +33,7 @@ els["preset-select"] = Object.assign(mkEl("preset-select"), { _value: "0" });
 const calls = {};  // plot id -> last data array
 global.Plotly = {
   react: (id, data, layout) => { calls[id] = { data, layout }; },
-  restyle: () => {}, Plots: { resize: () => {} },
+  restyle: () => {}, purge: () => {}, Plots: { resize: () => {} },
 };
 global.fetch = async (u) => ({ ok: true, text: async () => fs.readFileSync(path.join(APP, u), "utf8") });
 global.requestAnimationFrame = () => 0;
@@ -80,6 +80,12 @@ const view4Panel = () => els["v4-simple"].innerHTML;
   const gd5 = els["plot5"].plotHandlers.plotly_click;
   gd5 && gd5({ points: [{ curveNumber: 3, x: 1, y: 7 }] });
   ok("View 5: clicking a dataset square loads it exactly", els["V0-range"].value === "7" && els["a-range"].value === "1", `V0=${els["V0-range"].value} a=${els["a-range"].value}`);
+
+  // ---- View 5 3D toggle ----
+  els["seg-3d"].handlers.click();
+  ok("View 5: 3D toggle renders a surface + 3D markers", calls.plot5.data[0].type === "surface" && calls.plot5.data.slice(1).every((t) => t.type === "scatter3d") && !!calls.plot5.layout.scene);
+  els["seg-2d"].handlers.click();
+  ok("View 5: 2D toggle restores the heatmap", calls.plot5.data[0].type === "heatmap");
 
   // ---- View 7: all sweeps + click to load ----
   els["d-all"].checked = true; els["d-all"].handlers.change();

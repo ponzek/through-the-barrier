@@ -164,7 +164,7 @@
         <div class="toggle-row">
           <div class="seg" role="group" aria-label="View 5 representation">
             <button id="seg-2d" class="seg-btn active">2D heatmap</button>
-            <button id="seg-3d" class="seg-btn" disabled title="Disabled for stability; the 2D map is the accurate click/load view.">3D paused</button>
+            <button id="seg-3d" class="seg-btn" title="3D surface for visual inspection; use 2D to click/load states.">3D surface</button>
           </div>
           <span class="readout" id="v5-click-help">Click the 2D map or a dataset square to load that state</span>
         </div>
@@ -173,7 +173,7 @@
       <div class="side">
         <div class="stat-list" id="v5-stats"></div>
         <p class="note"><b>Color scale.</b> Color is <b>log₁₀(T)</b>, not T, because tunneling probabilities can shrink extremely fast. Equal color steps mean equal ratios of T.</p>
-        <p class="note">Use this 2D heatmap for the dataset squares. The 3D surface used the same values, but it was heavy and not useful for accurate clicking, so it is paused here.</p>
+        <p class="note">Use the 2D heatmap to click dataset squares. The 3D surface shows the same values for visual inspection, but it is not suited to precise clicking.</p>
       </div>
     </div>
   </article>
