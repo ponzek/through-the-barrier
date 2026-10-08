@@ -18,6 +18,9 @@
 
   // k = sqrt(2 m E)/hbar  ->  K_PER_SQRT_EV * sqrt(E[eV])  in 1/nm
   const K_PER_SQRT_EV = Math.sqrt(2 * M_E * EV_TO_J) / HBAR * NM_TO_M;
+  // Dimensionless natural units (hbar = m = 1), used by the supplied simulation datasets:
+  // k = sqrt(2E)  ->  K = sqrt(2)
+  const K_NATURAL = Math.SQRT2;
 
   const EQ_TOL = 1e-9; // relative tolerance for the E = V0 branch
 
@@ -76,36 +79,36 @@
   }
 
   // ---------- analytic transmission probability, Eqs. (5) and (7) ----------
-  function transmission(E, V0, a) {
+  // K = sqrt(2m/hbar^2) in (length^-1 energy^-1/2); default is the electron in eV / nm.
+  function transmission(E, V0, a, K = K_PER_SQRT_EV) {
     const errs = validate(E, V0, a);
     if (errs.length) throw new Error(errs.join(" "));
     const reg = regime(E, V0);
     if (reg === "threshold") {
-      // T = [1 + m V0 a^2 / (2 hbar^2)]^-1   (a in nm, V0 in eV)
-      const g = (M_E * V0 * EV_TO_J * Math.pow(a * NM_TO_M, 2)) / (2 * HBAR * HBAR);
-      return 1 / (1 + g);
+      // T = [1 + m V0 a^2 / (2 hbar^2)]^-1 = [1 + K^2 V0 a^2 / 4]^-1
+      return 1 / (1 + (K * K * V0 * a * a) / 4);
     }
     if (reg === "tunneling") {
-      const kappa = K_PER_SQRT_EV * Math.sqrt(V0 - E);
+      const kappa = K * Math.sqrt(V0 - E);
       const sh = Math.sinh(kappa * a);
       return 1 / (1 + (V0 * V0 * sh * sh) / (4 * E * (V0 - E)));
     }
-    const q = K_PER_SQRT_EV * Math.sqrt(E - V0);
+    const q = K * Math.sqrt(E - V0);
     const s = Math.sin(q * a);
     return 1 / (1 + (V0 * V0 * s * s) / (4 * E * (E - V0)));
   }
 
-  const reflection = (E, V0, a) => 1 - transmission(E, V0, a);
+  const reflection = (E, V0, a, K = K_PER_SQRT_EV) => 1 - transmission(E, V0, a, K);
 
   // ---------- full scattering state (independent of the T formula) ----------
   // Unit incident amplitude A = 1.
   //   x < 0   : e^{ikx} + B e^{-ikx}
   //   0..a    : C e^{gx} + D e^{-gx}   (g = s real, or g = iq);  C + D x at E = V0
   //   x > a   : F e^{ikx}
-  function solveState(E, V0, a) {
+  function solveState(E, V0, a, K = K_PER_SQRT_EV) {
     const errs = validate(E, V0, a);
     if (errs.length) throw new Error(errs.join(" "));
-    const k = K_PER_SQRT_EV * Math.sqrt(E);
+    const k = K * Math.sqrt(E);
     const reg = regime(E, V0);
     const ik = [0, k];
     const eika = cexp([0, k * a]);
@@ -120,8 +123,8 @@
         [Z, Z, ONE, cmul([0, -k], eika)],
       ];
     } else {
-      g = reg === "tunneling" ? [K_PER_SQRT_EV * Math.sqrt(V0 - E), 0]
-                              : [0, K_PER_SQRT_EV * Math.sqrt(E - V0)];
+      g = reg === "tunneling" ? [K * Math.sqrt(V0 - E), 0]
+                              : [0, K * Math.sqrt(E - V0)];
       const ega = cexp([g[0] * a, g[1] * a]);
       const emga = cexp([-g[0] * a, -g[1] * a]);
       const neg = (z) => [-z[0], -z[1]];
@@ -160,7 +163,7 @@
 
   const linspace = (a, b, n) => Array.from({ length: n }, (_, i) => a + (b * 1 - a) * i / (n - 1));
 
-  root.QT = { HBAR, M_E, EV_TO_J, NM_TO_M, K_PER_SQRT_EV,
+  root.QT = { HBAR, M_E, EV_TO_J, NM_TO_M, K_PER_SQRT_EV, K_NATURAL,
               validate, regime, transmission, reflection, solveState, psi, linspace };
   if (typeof module !== "undefined" && module.exports) module.exports = root.QT;
 })(typeof window !== "undefined" ? window : globalThis);

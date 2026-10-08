@@ -7,11 +7,40 @@
   const QT = window.QT;
   const $ = (id) => document.getElementById(id);
 
-  const DEF = { E: 8, V0: 10, a: 0.1 };
-  const P = { ...DEF };
-  const C = { cyan: "#5eead4", violet: "#a78bfa", amber: "#fbbf24", rose: "#fb7185", blue: "#60a5fa", dim: "#94a0c8", grid: "rgba(148,163,255,.14)" };
+  // Two data sources share every view:
+  //  model : analytic electron model, eV / nm (Views 1-6 as originally designed)
+  //  data  : dimensionless natural units (hbar = m = 1) with Quantum Gatekeeper records overlaid
+  const MODES = {
+    model: { key: "model", K: QT.K_PER_SQRT_EV, def: { E: 8, V0: 10, a: 0.1 },
+      ranges: { E: [0.5, 15, 0.1], V0: [1, 20, 0.1], a: [0.02, 1, 0.01] },
+      xr: (a) => [-1.5, a + 1.5],
+      ax: { E: "Energy (eV)", x: "Position x (nm)", Eu: " eV", Lu: " nm", kappaU: " nm⁻¹",
+        lbl: { E: "Particle energy <b>E</b> (eV)", V0: "Barrier height <b>V₀</b> (eV)", a: "Barrier width <b>a</b> (nm)" } } },
+    data: { key: "data", K: QT.K_NATURAL, def: { E: 3.5, V0: 5, a: 1.5 },
+      ranges: { E: [0.1, 10, 0.1], V0: [1, 10, 0.1], a: [0.1, 2.5, 0.05] },
+      xr: () => [-4, 6],
+      ax: { E: "Energy (dimensionless, ħ = m = 1)", x: "Position x (dimensionless)", Eu: "", Lu: "", kappaU: "",
+        lbl: { E: "Particle energy <b>E</b> (dimensionless)", V0: "Barrier height <b>V₀</b> (dimensionless)", a: "Barrier width <b>a</b> (dimensionless)" } } },
+  };
+  let MODE = MODES.model;
+  const P = { ...MODES.model.def };
+  let DS = null;                       // Quantum Gatekeeper tables, loaded in the View 7 section
+  const Tm = (E, V0, a) => QT.transmission(E, V0, a, MODE.K);
+  const solve = (E, V0, a) => QT.solveState(E, V0, a, MODE.K);
+  const near = (x, y) => Math.abs(x - y) < 1e-6;
+  const dsRecord = (E = P.E, V0 = P.V0, a = P.a) => (DS && DS.sum.find((r) => near(r.E, E) && near(r.V0, V0) && near(r.a, a))) || null;
+  const dsProfile = (E = P.E, V0 = P.V0, a = P.a) => (DS && DS.groups.find((g) => near(g.E, E) && near(g.V0, V0) && near(g.a, a))) || null;
+  // dataset value for a state (data mode only): summary record first, else matching wavefunction-profile scenario
+  function dsTruth(E, V0, a) {
+    if (MODE.key !== "data") return null;
+    const r = dsRecord(E, V0, a); if (r) return { T: r.T, R: r.R, label: r.id };
+    const g = dsProfile(E, V0, a); if (g) return { T: g.T, R: 1 - g.T, label: "profile “" + g.name + "”" };
+    return null;
+  }
+  const dsRe = (g, ph) => Array.from(g.re, (r, i) => r * Math.cos(ph) + g.im[i] * Math.sin(ph));
+  const C = { cyan: "#2fb7ad", violet: "#a56ad9", amber: "#d99028", rose: "#e65d8f", blue: "#5f8ee8", dim: "#765b72", grid: "rgba(190,132,166,.20)" };
   const CFG = { responsive: true, displaylogo: false, modeBarButtonsToRemove: ["lasso2d", "select2d"] };
-  const PRESETS = [
+  const PRESETS_MODEL = [
     ["Thin barrier", 8, 10, 0.05],
     ["Default (proposal)", 8, 10, 0.10],
     ["Wide barrier", 8, 10, 0.50],
@@ -20,10 +49,14 @@
     ["Above barrier (E > V₀)", 12, 10, 0.10],
     ["Above barrier, resonance (T≈1)", 12, 10, +(Math.PI / (QT.K_PER_SQRT_EV * Math.sqrt(2))).toFixed(3)],
   ];
-  let A = { name: "Default (proposal)", E: 8, V0: 10, a: 0.10 };
-  let B = { name: "Wide barrier", E: 8, V0: 10, a: 0.50 };
+  const SCN_DEFAULTS = {
+    model: { A: { name: "Default (proposal)", E: 8, V0: 10, a: 0.10 }, B: { name: "Wide barrier", E: 8, V0: 10, a: 0.50 } },
+    data: { A: { name: "Moderate tunneling", E: 3.5, V0: 5, a: 1.5 }, B: { name: "Thick barrier", E: 3.5, V0: 5, a: 2.0 } },
+  };
+  let A = { ...SCN_DEFAULTS.model.A };
+  let B = { ...SCN_DEFAULTS.model.B };
   let phase = 0, playing = false, lastT = 0, mode5 = "2d";
-  const cache = { cur: null, A: null, B: null };
+  const cache = { cur: null, A: null, B: null, prof: null };
 
   // ---------- helpers ----------
   const fmtT = (t) => (t < 1e-3 ? t.toExponential(3) : t.toFixed(6));
@@ -32,19 +65,19 @@
   const sup = (n) => String(n).replace(/-/g, "⁻").replace(/\d/g, (d) => "⁰¹²³⁴⁵⁶⁷⁸⁹"[d]);
   const baseLayout = (extra = {}) => {
     const L = Object.assign({
-      paper_bgcolor: "rgba(0,0,0,0)", plot_bgcolor: "rgba(8,12,28,.55)",
-      font: { family: "Inter, sans-serif", color: "#dbe2ff", size: 12 },
+      paper_bgcolor: "rgba(0,0,0,0)", plot_bgcolor: "rgba(255,255,255,.62)",
+      font: { family: "Inter, sans-serif", color: "#352133", size: 12 },
       margin: { l: 62, r: 20, t: 40, b: 52 },
       xaxis: { gridcolor: C.grid, zerolinecolor: C.grid }, yaxis: { gridcolor: C.grid, zerolinecolor: C.grid },
       legend: { orientation: "h", y: 1.0, yanchor: "bottom", x: 0 },
-      hoverlabel: { bgcolor: "#0b1226", bordercolor: C.cyan, font: { color: "#fff" } },
+      hoverlabel: { bgcolor: "#fff7fb", bordercolor: C.rose, font: { color: "#352133" } },
     }, extra);
     // title sits at the very top of the container; legend sits just above the plot area (no overlap)
     if (L.title) L.title = Object.assign({ y: 0.97, yanchor: "top", yref: "container", x: 0.02, xanchor: "left" }, L.title);
     L.margin = Object.assign({}, L.margin, { t: Math.max(L.margin.t, 70) });
     return L;
   };
-  const xGrid = (a, n = 1400) => QT.linspace(-1.5, a + 1.5, n);
+  const xGrid = (a, n = 1400) => { const [x0, x1] = MODE.xr(a); return QT.linspace(x0, x1, n); };
 
   // ---------- parameter wiring (3 sliders + validated number boxes) ----------
   const KEYS = ["E", "V0", "a"];
@@ -68,7 +101,7 @@
       update();
     });
   });
-  $("reset-btn").addEventListener("click", () => { setParams(DEF); });
+  $("reset-btn").addEventListener("click", () => { setParams(MODE.def); });
 
   // ---------- master update ----------
   function update() {
@@ -80,10 +113,11 @@
       return;
     }
     box.hidden = true;
-    const st = QT.solveState(P.E, P.V0, P.a);
+    const st = solve(P.E, P.V0, P.a);
     const xs = xGrid(P.a);
     cache.cur = { st, xs, w: QT.psi(st, xs) };
-    renderPill(st);
+    cache.prof = MODE.key === "data" ? dsProfile() : null;
+    renderPill(st); renderMatch();
     view1(st); view2(st); view3(st); view4(st); view5(st); view6();
   }
 
@@ -93,6 +127,36 @@
     p.textContent = { tunneling: "Tunneling · E < V₀", above: "Above barrier · E > V₀", threshold: "Threshold · E = V₀" }[st.regime];
   }
 
+  // ---------- data-source switch (analytic model <-> Quantum Gatekeeper dataset) ----------
+  function renderMatch() {
+    if (MODE.key !== "data") return;
+    const ds = dsTruth(P.E, P.V0, P.a), el = $("data-match");
+    el.className = "pill " + (ds ? "tunneling" : "threshold");
+    el.textContent = ds ? "✓ matches dataset " + ds.label + " · T = " + fmtT(ds.T) : "No dataset record at this exact state — model only";
+    $("snap-btn").hidden = !!ds;
+  }
+  function setMode(key) {
+    if (key === "data" && !DS) return;
+    setPlaying(false);
+    MODE = MODES[key];
+    KEYS.forEach((k) => {
+      const [mn, mx, st] = MODE.ranges[k], r = $(k + "-range");
+      r.min = mn; r.max = mx; r.step = st; $(k + "-num").step = st; $(k + "-lbl").innerHTML = MODE.ax.lbl[k];
+    });
+    $("src-model").classList.toggle("active", key === "model");
+    $("src-data").classList.toggle("active", key === "data");
+    $("data-row").hidden = key !== "data";
+    A = { ...SCN_DEFAULTS[key].A }; B = { ...SCN_DEFAULTS[key].B };
+    fillPresets();
+    setParams(MODE.def);
+  }
+  $("src-model").addEventListener("click", () => setMode("model"));
+  $("src-data").addEventListener("click", () => setMode("data"));
+  $("snap-btn").addEventListener("click", () => {
+    const nearest = (arr, v) => arr.reduce((b, x) => (Math.abs(x - v) < Math.abs(b - v) ? x : b));
+    setParams({ E: Math.min(10, Math.max(0.1, Math.round(P.E * 10) / 10)), V0: nearest(DS.V0s, P.V0), a: nearest(DS.as, P.a) });
+  });
+
   // ======================= VIEW 1 =======================
   function view1(st) {
     const { E, V0, a } = P;
@@ -101,9 +165,9 @@
     const traces = [
       { x: [x0, 0, 0, a, a, x1], y: [0, 0, V0, V0, 0, 0], mode: "lines", name: "Potential energy V(x)",
         line: { color: C.violet, width: 3 }, fill: "tozeroy", fillcolor: "rgba(167,139,250,.28)",
-        hovertemplate: "x = %{x:.3f} nm<br>V = %{y:.2f} eV<extra></extra>" },
+        hovertemplate: "x = %{x:.3f}" + MODE.ax.Lu + "<br>V = %{y:.2f}" + MODE.ax.Eu + "<extra></extra>" },
       { x: [x0, x1], y: [E, E], mode: "lines", name: "Particle energy E", line: { color: C.amber, width: 2.5, dash: "dash" },
-        hovertemplate: "E = " + fmt(E) + " eV<extra></extra>" },
+        hovertemplate: "E = " + fmt(E) + MODE.ax.Eu + "<extra></extra>" },
     ];
     const forbidden = E < V0;
     const ann = [];
@@ -117,8 +181,8 @@
     if (forbidden) ann.push({ x: a / 2, y: V0 + top * 0.04, text: "classically forbidden", showarrow: false, font: { color: C.rose, size: 11 }, xanchor: "center" });
     Plotly.react("plot1", traces, baseLayout({
       title: { text: "Potential energy and particle energy (not a physical wall)", font: { size: 14 } },
-      xaxis: { title: "Position x (nm)", gridcolor: C.grid, range: [x0, x1] },
-      yaxis: { title: "Energy (eV)", gridcolor: C.grid, range: [0, top] }, annotations: ann,
+      xaxis: { title: MODE.ax.x, gridcolor: C.grid, range: [x0, x1] },
+      yaxis: { title: MODE.ax.E, gridcolor: C.grid, range: [0, top] }, annotations: ann,
       shapes: forbidden ? [{ type: "rect", x0: 0, x1: a, y0: E, y1: V0, fillcolor: "rgba(251,113,133,.35)", line: { width: 0 } }] : [],
     }), CFG);
 
@@ -152,23 +216,25 @@
       { x: xs, y: Array.from(m), mode: "lines", line: { width: 0 }, hoverinfo: "skip", showlegend: false },
       { x: xs, y: neg(m), mode: "lines", line: { width: 0 }, fill: "tonexty", fillcolor: "rgba(96,165,250,.16)", name: "Envelope ±|ψ|", hoverinfo: "skip" },
       { x: xs, y: Array.from(reAt(w, phase)), mode: "lines", line: { color: C.cyan, width: 2.6 }, name: "Re[ψ(x) e^(−iφ)]",
-        hovertemplate: "x = %{x:.3f} nm<br>Re ψ = %{y:.4f}<extra></extra>" },
+        hovertemplate: "x = %{x:.3f}" + MODE.ax.Lu + "<br>Re ψ = %{y:.4f}<extra></extra>" },
+      ...(cache.prof ? [{ x: cache.prof.x, y: dsRe(cache.prof, phase), mode: "markers", name: "dataset (Quantum Gatekeeper)", marker: { size: 4.5, color: "#9e3b6f", opacity: 0.85 },
+        hovertemplate: "dataset<br>x = %{x:.3f}<br>Re ψ = %{y:.4f}<extra></extra>" }] : []),
     ], baseLayout({
       title: { text: "Stationary scattering state (incident amplitude = 1)", font: { size: 14 } },
-      xaxis: { title: "Position x (nm)", gridcolor: C.grid }, yaxis: { title: "Relative wavefunction amplitude (arb.)", gridcolor: C.grid, range: [-ymax, ymax] },
+      xaxis: { title: MODE.ax.x, gridcolor: C.grid }, yaxis: { title: "Relative wavefunction amplitude (arb.)", gridcolor: C.grid, range: [-ymax, ymax] },
       shapes: [{ type: "rect", x0: 0, x1: P.a, y0: -ymax, y1: ymax, fillcolor: "rgba(167,139,250,.2)", line: { color: C.violet, width: 1 } }],
       annotations: [
-        { x: -0.75, y: ymax * 0.93, text: "incident + reflected", showarrow: false, font: { color: C.blue } },
+        { x: xs[0] / 2, y: ymax * 0.93, text: "incident + reflected", showarrow: false, font: { color: C.blue } },
         { x: P.a / 2, y: -ymax * 0.93, text: midLabel, showarrow: false, font: { color: C.violet, size: 11 } },
-        { x: P.a + 0.75, y: ymax * 0.93, text: "transmitted", showarrow: false, font: { color: C.amber } },
+        { x: (P.a + xs[xs.length - 1]) / 2, y: ymax * 0.93, text: "transmitted", showarrow: false, font: { color: C.amber } },
       ],
     }), CFG);
 
     const kap = st.g ? st.g[0] : 0, q = st.g ? st.g[1] : 0;
     const rows = [
       [C.blue, "<b>x &lt; 0</b> — incident + reflected waves interfere. Reflected share R = " + fmt(st.R_num, 4)],
-      [C.violet, reg === "tunneling" ? "<b>0 ≤ x ≤ a</b> — <b>evanescent</b>: ψ decays like e<sup>−κx</sup>, κ = " + fmt(kap, 2) + " nm⁻¹ (decay length 1/κ = " + fmt(1 / kap, 3) + " nm). κa = " + fmt(kap * P.a, 3)
-        : reg === "above" ? "<b>0 ≤ x ≤ a</b> — <b>oscillatory</b>: wavelength 2π/q = " + fmt(2 * Math.PI / q, 3) + " nm inside the barrier."
+      [C.violet, reg === "tunneling" ? "<b>0 ≤ x ≤ a</b> — <b>evanescent</b>: ψ decays like e<sup>−κx</sup>, κ = " + fmt(kap, 2) + MODE.ax.kappaU + " (decay length 1/κ = " + fmt(1 / kap, 3) + MODE.ax.Lu + "). κa = " + fmt(kap * P.a, 3)
+        : reg === "above" ? "<b>0 ≤ x ≤ a</b> — <b>oscillatory</b>: wavelength 2π/q = " + fmt(2 * Math.PI / q, 3) + MODE.ax.Lu + " inside the barrier."
         : "<b>0 ≤ x ≤ a</b> — <b>threshold</b>: ψ is linear in x (ψ = C + Dx)."],
       [C.amber, "<b>x &gt; a</b> — transmitted wave with constant amplitude |F| = " + fmt(Math.sqrt(st.T_num), 4) + " (T = " + fmtT(st.T_num) + ")."],
     ];
@@ -177,7 +243,9 @@
 
   function animateFrame() {
     if (!cache.cur) return;
-    Plotly.restyle("plot2", { y: [Array.from(reAt(cache.cur.w, phase))] }, [2]);
+    const ys = [Array.from(reAt(cache.cur.w, phase))], idx = [2];
+    if (cache.prof) { ys.push(dsRe(cache.prof, phase)); idx.push(3); }   // dataset dots follow the same phase
+    Plotly.restyle("plot2", { y: ys }, idx);
     if (cache.A && cache.B) Plotly.restyle("plot6a", { y: [Array.from(reAt(cache.A.w, phase)), Array.from(reAt(cache.B.w, phase))] }, [2, 5]);
     $("phase-readout").textContent = "φ = " + fmt((((phase % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI)) / Math.PI, 2) + " π";
   }
@@ -208,10 +276,12 @@
     const x0 = xs[0], x1 = xs[xs.length - 1];
     Plotly.react("plot3", [
       { x: xs, y: dens, mode: "lines", name: "|ψ(x)|²", line: { color: C.cyan, width: 2.6 }, fill: "tozeroy", fillcolor: "rgba(94,234,212,.16)",
-        hovertemplate: "x = %{x:.3f} nm<br>relative |ψ|² = %{y:.5f}<extra></extra>" },
+        hovertemplate: "x = %{x:.3f}" + MODE.ax.Lu + "<br>relative |ψ|² = %{y:.5f}<extra></extra>" },
+      ...(cache.prof ? [{ x: cache.prof.x, y: cache.prof.dens, mode: "markers", name: "dataset (Quantum Gatekeeper)", marker: { size: 4.5, color: "#9e3b6f", opacity: 0.85 },
+        hovertemplate: "dataset<br>x = %{x:.3f}<br>|ψ|² = %{y:.5f}<extra></extra>" }] : []),
     ], baseLayout({
       title: { text: "Relative probability density |ψ(x)|² (arbitrary units)", font: { size: 14 } },
-      xaxis: { title: "Position x (nm)", gridcolor: C.grid }, yaxis: { title: "Relative |ψ(x)|² (arb.)", gridcolor: C.grid, range: [0, ymax] },
+      xaxis: { title: MODE.ax.x, gridcolor: C.grid }, yaxis: { title: "Relative |ψ(x)|² (arb.)", gridcolor: C.grid, range: [0, ymax] },
       shapes: [
         { type: "rect", x0: 0, x1: P.a, y0: 0, y1: ymax, fillcolor: "rgba(167,139,250,.2)", line: { color: C.violet, width: 1 } },
         { type: "line", x0: P.a, x1: x1, y0: st.T_num, y1: st.T_num, line: { color: C.amber, width: 1.5, dash: "dot" } },
@@ -231,104 +301,144 @@
       s("|ψ(0)|² at left edge", fmt(d0.re[0] ** 2 + d0.im[0] ** 2, 4)) +
       s("|ψ(a)|² at right edge", fmt(da.re[0] ** 2 + da.im[0] ** 2, 4)) +
       s("Transmitted level (= T)", fmtT(st.T_num)) +
-      s("Left ripple range", fmt(lo, 3) + " – " + fmt(hi, 3));
+      s("Left ripple range", fmt(lo, 3) + " – " + fmt(hi, 3)) +
+      (cache.prof ? (() => { const wp = QT.psi(st, cache.prof.x); let d = 0; cache.prof.dens.forEach((v, i) => { d = Math.max(d, Math.abs(wp.re[i] ** 2 + wp.im[i] ** 2 - v)); }); return s("Dataset profile ✓ max |Δ|ψ|²|", d.toExponential(1)); })() : "");
   }
 
   // ======================= VIEW 4 =======================
   function view4(st) {
-    const Tf = QT.transmission(P.E, P.V0, P.a), Rf = 1 - Tf;
-    Plotly.react("plot4", [
-      { type: "bar", orientation: "h", y: ["Closed-form", "From wavefunction"], x: [Rf, st.R_num], name: "Reflection R", marker: { color: C.rose },
-        text: [fmt(Rf, 4), fmt(st.R_num, 4)], textposition: "inside", hovertemplate: "R = %{x:.8f}<extra></extra>" },
-      { type: "bar", orientation: "h", y: ["Closed-form", "From wavefunction"], x: [Tf, st.T_num], name: "Transmission T", marker: { color: C.cyan },
-        text: [fmtT(Tf), fmtT(st.T_num)], textposition: "inside", insidetextfont: { color: "#041016" }, hovertemplate: "T = %{x:.8g}<extra></extra>" },
-    ], baseLayout({
-      barmode: "stack", margin: { l: 130, r: 20, t: 40, b: 52 },
-      title: { text: "Share of incident probability current (R + T = 1)", font: { size: 14 } },
-      xaxis: { title: "Probability (unitless)", range: [0, 1], gridcolor: C.grid }, yaxis: { gridcolor: C.grid },
-    }), CFG);
+    const Tf = Tm(P.E, P.V0, P.a), Rf = 1 - Tf, ds = dsTruth(P.E, P.V0, P.a);
+    const reflectedPct = (100 * Rf).toFixed(1) + "%";
+    const transmittedPct = (100 * Tf).toFixed(1) + "%";
+    const outOf = (x) => Math.round(100 * x);
+    $("v4-simple").innerHTML = `
+      <p class="result-title">Main answer: <strong>${outOf(Tf)} out of 100</strong> simulated particles pass through this barrier.</p>
+      <div class="result-split">
+        <div class="result-metric reflect"><span>Reflect from barrier</span><b>${reflectedPct}</b><p>Reflection R</p></div>
+        <div class="result-metric transmit"><span>Pass through barrier</span><b>${transmittedPct}</b><p>Transmission T</p></div>
+      </div>
+      <div class="result-bar" aria-label="${reflectedPct} reflected and ${transmittedPct} transmitted">
+        <span class="reflect" style="width:${Math.max(2, 100 * Rf)}%">${reflectedPct}</span>
+        <span class="transmit" style="width:${Math.max(2, 100 * Tf)}%">${transmittedPct}</span>
+      </div>
+      <p class="result-caption">This is a local simulation result. No data is sent back to Quantum Gatekeeper or anywhere else.</p>`;
     const sum = Rf + Tf, err = Math.abs(st.R_num + st.T_num - 1), diff = Math.abs(st.T_num - Tf);
-    const s = (l, v, cls = "") => `<div class="stat ${cls}"><span>${l}</span><b>${v}</b></div>`;
+    const s = (l, v, cls = "") => `<div class="stat ${cls}"><span>${l}</span><b>${cls === "good" ? "✓ " : cls === "bad" ? "✗ " : ""}${v}</b></div>`;
+    let extra = "";
+    if (ds) { const d = Math.abs(ds.T - Tf); extra = s("Saved dataset record (" + ds.label + ")", "T = " + fmtT(ds.T)) + s("|T dataset − T model|", d.toExponential(1), d < 5e-5 ? "good" : "bad"); }
+    else if (MODE.key === "data") extra = s("Dataset record", "none at this state (model only)");
     $("v4-stats").innerHTML =
-      s("Reflection R", fmt(Rf, 6)) + s("Transmission T", fmtT(Tf)) +
-      s("R + T", sum.toFixed(12), Math.abs(sum - 1) < 1e-10 ? "good" : "bad") +
-      s("|B|² + |F|² − 1 (flux)", err.toExponential(1), err < 1e-9 ? "good" : "bad") +
-      s("|T formula − |F|²|", diff.toExponential(1), diff < 1e-9 ? "good" : "bad") +
-      s("Energy of transmitted particle", fmt(P.E, 2) + " eV (unchanged)");
+      s("Reflected by barrier", reflectedPct + " (R = " + fmt(Rf, 6) + ")") +
+      s("Passed through barrier", transmittedPct + " (T = " + fmtT(Tf) + ")") +
+      s("Check: R + T", sum.toFixed(6), Math.abs(sum - 1) < 1e-10 ? "good" : "bad") +
+      s("Formula vs. wavefunction", diff < 1e-9 && err < 1e-9 ? "matches" : "does not match", diff < 1e-9 && err < 1e-9 ? "good" : "bad") +
+      s("Energy of transmitted particle", fmt(P.E, 2) + MODE.ax.Eu + " (unchanged)") + extra;
   }
 
   // ======================= VIEW 5 =======================
-  const W5 = QT.linspace(0.02, 1.0, 80), H5 = QT.linspace(1, 20, 77);
+  const grid5 = () => {
+    const dense = mode5 === "2d";
+    return MODE.key === "model"
+      ? { W: QT.linspace(0.02, 1.0, dense ? 80 : 46), H: QT.linspace(1, 20, dense ? 77 : 44) }
+      : { W: QT.linspace(0.1, 2.5, dense ? 70 : 42), H: QT.linspace(1, 10, dense ? 60 : 36) };
+  };
   const TICKV = [-16, -12, -8, -4, -2, -1, 0], TICKT = TICKV.map((v) => "10" + sup(v));
+  const snapTo = (v, step) => +(Math.round(v / step) * step).toFixed(6);
   function view5(st) {
+    const { W: W5, H: H5 } = grid5();
     const z = [], tt = [];
     for (const V0 of H5) {
       const zr = [], tr = [];
-      for (const a of W5) { const T = QT.transmission(P.E, V0, a); tr.push(T); zr.push(Math.max(log10T(T), -16)); }
+      for (const a of W5) { const T = Tm(P.E, V0, a); tr.push(T); zr.push(Math.max(log10T(T), -16)); }
       z.push(zr); tt.push(tr);
     }
     const cb = { title: { text: "log₁₀(T)", side: "top" }, tickvals: TICKV, ticktext: TICKT, len: 0.9 };
-    const here = log10T(st.T_num);
-    let data, layout;
+    const here = log10T(st.T_num), U = MODE.ax;
+    const recs = MODE.key === "data" && DS ? DS.sum.filter((r) => near(r.E, P.E)) : [];
+    const recMarker = (size, sym) => ({ symbol: sym, size, color: recs.map((r) => Math.max(log10T(r.T), -16)), colorscale: "RdPu", cmin: -16, cmax: 0, line: { color: "#fff", width: 2 } });
+    const recText = recs.map((r) => `${r.id}<br>T = ${r.T}<br>R = ${r.R}<br>regime: ${r.regime}`);
+    let data, layout, overlayIdx;
     if (mode5 === "2d") {
       data = [
-        { type: "heatmap", x: W5, y: H5, z, customdata: tt, colorscale: "Viridis", zmin: -16, zmax: 0, colorbar: cb,
-          hovertemplate: "width a = %{x:.3f} nm<br>height V₀ = %{y:.2f} eV<br>T = %{customdata:.3e}<br>log₁₀T = %{z:.2f}<extra></extra>" },
-        { type: "scatter", mode: "markers", x: [P.a], y: [P.V0], name: "Current state", marker: { size: 15, color: "#fff", line: { color: "#000", width: 2 }, symbol: "circle-open-dot" },
-          hovertemplate: "Current: a = " + fmt(P.a, 2) + " nm, V₀ = " + fmt(P.V0, 1) + " eV<br>T = " + fmtT(st.T_num) + "<extra></extra>" },
+        { type: "heatmap", x: W5, y: H5, z, customdata: tt, colorscale: "RdPu", zmin: -16, zmax: 0, colorbar: cb,
+          hovertemplate: "width a = %{x:.3f}" + U.Lu + "<br>height V₀ = %{y:.2f}" + U.Eu + "<br>T = %{customdata:.3e}<br>log₁₀T = %{z:.2f}<extra>model</extra>" },
+        { type: "scatter", mode: "markers", x: [P.a], y: [P.V0], name: "Current state", marker: { size: 15, color: "#fff", line: { color: "#9e3b6f", width: 2 }, symbol: "circle-open-dot" },
+          hovertemplate: "Current: a = " + fmt(P.a, 2) + U.Lu + ", V₀ = " + fmt(P.V0, 1) + U.Eu + "<br>T = " + fmtT(st.T_num) + "<extra></extra>" },
         { type: "scatter", mode: "lines", x: [W5[0], W5[W5.length - 1]], y: [P.E, P.E], name: "V₀ = E (threshold)", line: { color: C.amber, dash: "dash", width: 2 }, hoverinfo: "skip" },
       ];
+      if (recs.length) { overlayIdx = 3; data.push({ type: "scatter", mode: "markers", x: recs.map((r) => r.a), y: recs.map((r) => r.V0), name: "Dataset records (E = " + fmt(P.E, 1) + ")", marker: recMarker(16, "square"),
+        text: recText, hovertemplate: "%{text}<br>a = %{x}, V₀ = %{y}<extra>dataset</extra>" }); }
       layout = baseLayout({
-        title: { text: "Transmission over barrier width × height (E = " + fmt(P.E, 1) + " eV) · log color scale", font: { size: 14 } },
-        xaxis: { title: "Barrier width a (nm)", gridcolor: C.grid }, yaxis: { title: "Barrier height V₀ (eV)", gridcolor: C.grid },
+        title: { text: "Transmission over barrier width × height (E = " + fmt(P.E, 1) + U.Eu + ") · log color scale", font: { size: 14 } },
+        xaxis: { title: "Barrier width a" + (MODE.key === "model" ? " (nm)" : " (dimensionless)"), gridcolor: C.grid },
+        yaxis: { title: "Barrier height V₀" + (MODE.key === "model" ? " (eV)" : " (dimensionless)"), gridcolor: C.grid },
       });
     } else {
       data = [
-        { type: "surface", x: W5, y: H5, z, customdata: tt, colorscale: "Viridis", cmin: -16, cmax: 0, colorbar: cb,
-          hovertemplate: "a = %{x:.3f} nm<br>V₀ = %{y:.2f} eV<br>log₁₀T = %{z:.2f}<extra></extra>" },
-        { type: "scatter3d", mode: "markers", x: [P.a], y: [P.V0], z: [Math.max(here, -16)], name: "Current state",
-          marker: { size: 7, color: "#fff", line: { color: "#000", width: 2 } }, hoverinfo: "name" },
+        { type: "surface", x: W5, y: H5, z, customdata: tt, colorscale: "RdPu", cmin: -16, cmax: 0, colorbar: cb,
+          hovertemplate: "a = %{x:.3f}" + U.Lu + "<br>V₀ = %{y:.2f}" + U.Eu + "<br>log₁₀T = %{z:.2f}<extra>model</extra>" },
+        { type: "scatter3d", mode: "markers", x: [P.a], y: [P.V0], z: [Math.max(here, -16) + 0.5], name: "Current state",
+          marker: { size: 6, color: "#fff", line: { color: "#9e3b6f", width: 3 } }, hoverinfo: "name" },
       ];
+      // markers are lifted 0.5 log-units above the surface so the surface cannot hide them; hover shows the true values
+      if (recs.length) { overlayIdx = 2; data.push({ type: "scatter3d", mode: "markers", x: recs.map((r) => r.a), y: recs.map((r) => r.V0), z: recs.map((r) => Math.max(log10T(r.T), -16) + 0.5), name: "Dataset records",
+        marker: { symbol: "diamond", size: 6, color: recs.map((r) => Math.max(log10T(r.T), -16)), colorscale: "RdPu", cmin: -16, cmax: 0, line: { color: "#fff", width: 3 } }, text: recText, hovertemplate: "%{text}<extra>dataset</extra>" }); }
       layout = baseLayout({
         margin: { l: 0, r: 0, t: 40, b: 0 },
-        title: { text: "3D surface of log₁₀(T) (E = " + fmt(P.E, 1) + " eV)", font: { size: 14 } },
-        scene: { xaxis: { title: "a (nm)" }, yaxis: { title: "V₀ (eV)" }, zaxis: { title: "log₁₀(T)", range: [-16, 0] }, camera: { eye: { x: 1.6, y: -1.6, z: 0.9 } },
-          bgcolor: "rgba(8,12,28,.55)" },
+        title: { text: "3D surface of log₁₀(T) (E = " + fmt(P.E, 1) + U.Eu + ")", font: { size: 14 } },
+        scene: { xaxis: { title: "Barrier width a" + (MODE.key === "model" ? " (nm)" : "") }, yaxis: { title: "Barrier height V₀" + (MODE.key === "model" ? " (eV)" : "") },
+          zaxis: { title: "T (log scale)", range: [-16, 1], tickvals: TICKV, ticktext: TICKT },
+          aspectmode: "manual", aspectratio: { x: 1.3, y: 1.3, z: 0.8 }, camera: { eye: { x: 1.9, y: -1.7, z: 0.95 }, center: { x: 0, y: 0, z: -0.1 } },
+          bgcolor: "rgba(255,247,251,.72)" },
       });
     }
+    $("v5-click-help").textContent = mode5 === "2d"
+      ? "Click the 2D map or a dataset square to load that state"
+      : "3D is for visual inspection; switch to 2D to click/load dataset squares";
     Plotly.react("plot5", data, layout, CFG);
     const gd = $("plot5");
     gd.removeAllListeners && gd.removeAllListeners("plotly_click");
-    gd.on("plotly_click", (ev) => {
-      const pt = ev.points && ev.points[0]; if (!pt) return;
-      if (pt.curveNumber !== 0) return;
-      setParams({ E: P.E, V0: Math.round(pt.y * 10) / 10, a: Math.round(pt.x * 100) / 100 });
-    });
+    if (mode5 === "2d") {
+      gd.on("plotly_click", (ev) => {
+        const pt = ev.points && ev.points[0]; if (!pt) return;
+        if (pt.curveNumber === overlayIdx) { setParams({ E: P.E, V0: pt.y, a: pt.x }); return; }   // exact dataset record
+        if (pt.curveNumber !== 0) return;
+        setParams({ E: P.E, V0: snapTo(pt.y, MODE.ranges.V0[2]), a: snapTo(pt.x, MODE.ranges.a[2]) });
+      });
+    }
     const s = (l, v) => `<div class="stat"><span>${l}</span><b>${v}</b></div>`;
-    const dec = (QT.transmission(P.E, P.V0, P.a * 2));
+    const dec = Tm(P.E, P.V0, P.a * 2), ds = dsTruth(P.E, P.V0, P.a);
     $("v5-stats").innerHTML =
-      s("Marker: a, V₀", fmt(P.a, 2) + " nm, " + fmt(P.V0, 1) + " eV") +
-      s("T at marker", fmtT(st.T_num)) + s("log₁₀(T) at marker", fmt(here, 3)) +
+      s("Marker: a, V₀", fmt(P.a, 2) + U.Lu + ", " + fmt(P.V0, 1) + U.Eu) +
+      s("T at marker (model)", fmtT(st.T_num)) + s("log₁₀(T) at marker", fmt(here, 3)) +
+      (ds ? s("T at marker (dataset)", fmtT(ds.T)) : "") +
       s("T if width doubled", fmtT(dec)) +
-      s("Ratio T(2a)/T(a)", fmt(dec / st.T_num, 4));
+      s("Ratio T(2a)/T(a)", fmt(dec / st.T_num, 4)) +
+      (recs.length ? s("Dataset squares on map", recs.length + " (click one to load it)") : "");
   }
   $("seg-2d").addEventListener("click", () => { mode5 = "2d"; $("seg-2d").classList.add("active"); $("seg-3d").classList.remove("active"); if (cache.cur) view5(cache.cur.st); });
-  $("seg-3d").addEventListener("click", () => { mode5 = "3d"; $("seg-3d").classList.add("active"); $("seg-2d").classList.remove("active"); if (cache.cur) view5(cache.cur.st); });
+  $("seg-3d").addEventListener("click", () => { mode5 = "2d"; $("seg-2d").classList.add("active"); $("seg-3d").classList.remove("active"); if (cache.cur) view5(cache.cur.st); });
 
   // ======================= VIEW 6 =======================
   const sel = $("preset-select");
-  PRESETS.forEach((p, i) => { const o = document.createElement("option"); o.value = i; o.textContent = p[0]; sel.appendChild(o); });
+  const presets = () => (MODE.key === "model" ? PRESETS_MODEL
+    : DS ? DS.groups.map((g) => [g.name, g.E, g.V0, g.a]).concat([["Thin barrier (a = 0.5)", 3, 5, 0.5], ["Near threshold (E = 4.9)", 4.9, 5, 1.5]]) : []);
+  function fillPresets() {
+    sel.innerHTML = "";
+    presets().forEach((p, i) => { const o = document.createElement("option"); o.value = i; o.textContent = p[0]; sel.appendChild(o); });
+  }
+  fillPresets();
   const mk = (s) => ({ name: s.name, E: s.E, V0: s.V0, a: s.a });
   $("save-a").addEventListener("click", () => { A = { name: "Saved A", ...P }; view6(); });
   $("save-b").addEventListener("click", () => { B = { name: "Saved B", ...P }; view6(); });
   $("apply-a").addEventListener("click", () => setParams(A));
   $("apply-b").addEventListener("click", () => setParams(B));
-  $("preset-a").addEventListener("click", () => { const p = PRESETS[sel.value]; A = { name: p[0], E: p[1], V0: p[2], a: p[3] }; view6(); });
-  $("preset-b").addEventListener("click", () => { const p = PRESETS[sel.value]; B = { name: p[0], E: p[1], V0: p[2], a: p[3] }; view6(); });
+  $("preset-a").addEventListener("click", () => { const p = presets()[sel.value]; A = { name: p[0], E: p[1], V0: p[2], a: p[3] }; view6(); });
+  $("preset-b").addEventListener("click", () => { const p = presets()[sel.value]; B = { name: p[0], E: p[1], V0: p[2], a: p[3] }; view6(); });
   $("log-T").addEventListener("change", view6);
 
   function scnState(s) {
-    const st = QT.solveState(s.E, s.V0, s.a);
+    const st = solve(s.E, s.V0, s.a);
     const xs = xGrid(s.a, 900);
     return { st, xs, w: QT.psi(st, xs) };
   }
@@ -341,7 +451,7 @@
         { x: c.xs, y: Array.from(m), mode: "lines", line: { width: 0 }, hoverinfo: "skip", showlegend: false, xaxis: xa, yaxis: ya },
         { x: c.xs, y: neg(m), mode: "lines", line: { width: 0 }, fill: "tonexty", fillcolor: color + "33", hoverinfo: "skip", showlegend: false, xaxis: xa, yaxis: ya },
         { x: c.xs, y: Array.from(reAt(c.w, phase)), mode: "lines", line: { color, width: 2.2 }, name: name, showlegend: false, xaxis: xa, yaxis: ya,
-          hovertemplate: name + "<br>x = %{x:.3f} nm<br>Re ψ = %{y:.4f}<extra></extra>" },
+          hovertemplate: name + "<br>x = %{x:.3f}" + MODE.ax.Lu + "<br>Re ψ = %{y:.4f}<extra></extra>" },
       ];
     };
     const ym = Math.max(...env(cache.A.w), ...env(cache.B.w)) * 1.15 + 0.1;
@@ -351,7 +461,7 @@
       baseLayout({
         margin: { l: 62, r: 14, t: 34, b: 44 },
         title: { text: "Synchronized wave plots (shared phase φ from View 2)", font: { size: 14 } },
-        xaxis: { domain: [0, 1], anchor: "y", title: "Position x (nm)", gridcolor: C.grid }, yaxis: { domain: [0, 0.45], range: [-ym, ym], title: "Re ψ (B)", gridcolor: C.grid },
+        xaxis: { domain: [0, 1], anchor: "y", title: MODE.ax.x, gridcolor: C.grid }, yaxis: { domain: [0, 0.45], range: [-ym, ym], title: "Re ψ (B)", gridcolor: C.grid },
         xaxis2: { domain: [0, 1], anchor: "y2", gridcolor: C.grid }, yaxis2: { domain: [0.55, 1], range: [-ym, ym], title: "Re ψ (A)", gridcolor: C.grid },
         shapes: [shape(B, "x", "y", C.amber), shape(A, "x2", "y2", C.cyan)],
         annotations: [
@@ -363,9 +473,31 @@
 
     const logT = $("log-T").checked;
     const Ta = cache.A.st.T_num, Tb = cache.B.st.T_num;
+    const aWins = Ta >= Tb;
+    const ratio = aWins ? Ta / Math.max(Tb, 1e-300) : Tb / Math.max(Ta, 1e-300);
+    $("scenario-summary").innerHTML = `
+      <div class="scenario-card a ${aWins ? "scenario-winner" : ""}">
+        <h3>Scenario A</h3>
+        <div class="big">${fmtT(Ta)}</div>
+        <p>${A.name}<br>About ${(100 * Ta).toFixed(2)} out of 100 get through.</p>
+      </div>
+      <div class="scenario-card b ${!aWins ? "scenario-winner" : ""}">
+        <h3>Scenario B</h3>
+        <div class="big">${fmtT(Tb)}</div>
+        <p>${B.name}<br>About ${(100 * Tb).toFixed(2)} out of 100 get through.</p>
+      </div>
+      <div class="scenario-card scenario-winner">
+        <h3>Plain answer</h3>
+        <div class="big">${aWins ? "A" : "B"} lets more through</div>
+        <p>${aWins ? "A" : "B"} has about ${fmt(ratio, 2)} times more transmission than ${aWins ? "B" : "A"}.</p>
+      </div>`;
     Plotly.react("plot6b", [
       { type: "bar", x: ["Transmission T", "Reflection R"], y: [Ta, 1 - Ta], name: "Scenario A", marker: { color: C.cyan }, hovertemplate: "A %{x} = %{y:.6g}<extra></extra>" },
       { type: "bar", x: ["Transmission T", "Reflection R"], y: [Tb, 1 - Tb], name: "Scenario B", marker: { color: C.amber }, hovertemplate: "B %{x} = %{y:.6g}<extra></extra>" },
+      // dataset values (hatched) appear next to the model bars when the scenario matches a Quantum Gatekeeper record
+      ...[["A", dsTruth(A.E, A.V0, A.a), C.cyan], ["B", dsTruth(B.E, B.V0, B.a), C.amber]].filter((x) => x[1]).map(([n, d, c]) => ({
+        type: "bar", x: ["Transmission T", "Reflection R"], y: [d.T, d.R], name: "Scenario " + n + " · dataset",
+        marker: { color: c, pattern: { shape: "/" }, line: { color: "#fff", width: 1 } }, hovertemplate: n + " dataset %{x} = %{y:.6g}<extra></extra>" })),
     ], baseLayout({
       barmode: "group", margin: { l: 62, r: 14, t: 40, b: 40 },
       title: { text: "Outcome probabilities" + (logT ? " (LOG axis)" : " (linear axis)"), font: { size: 14 } },
@@ -374,17 +506,18 @@
 
     const row = (l, f) => `<tr><td>${l}</td><td>${f(A, cache.A)}</td><td>${f(B, cache.B)}</td></tr>`;
     $("scn-table").innerHTML = `<table><tr><th></th><th style="color:${C.cyan}">A</th><th style="color:${C.amber}">B</th></tr>` +
-      row("Name", (s) => s.name) + row("E (eV)", (s) => fmt(s.E, 2)) + row("V₀ (eV)", (s) => fmt(s.V0, 2)) + row("a (nm)", (s) => fmt(s.a, 3)) +
+      row("Name", (s) => s.name) + row("E" + (MODE.key === "model" ? " (eV)" : ""), (s) => fmt(s.E, 2)) + row("V₀" + (MODE.key === "model" ? " (eV)" : ""), (s) => fmt(s.V0, 2)) + row("a" + (MODE.key === "model" ? " (nm)" : ""), (s) => fmt(s.a, 3)) +
       row("Regime", (s, c) => c.st.regime) + row("T", (s, c) => fmtT(c.st.T_num)) + row("R", (s, c) => fmt(c.st.R_num, 6)) +
-      row("log₁₀ T", (s, c) => fmt(log10T(c.st.T_num), 3)) + "</table>";
+      row("log₁₀ T", (s, c) => fmt(log10T(c.st.T_num), 3)) +
+      (MODE.key === "data" ? row("Dataset T", (s) => { const d = dsTruth(s.E, s.V0, s.a); return d ? fmtT(d.T) : "— (no record)"; }) : "") + "</table>";
 
     sensitivity(Ta, Tb);
   }
 
   function sensitivity(Ta, Tb) {
-    const base = log10T(QT.transmission(P.E, P.V0, P.a));
+    const base = log10T(Tm(P.E, P.V0, P.a));
     const names = { E: "Energy E", V0: "Height V₀", a: "Width a" };
-    const eff = (k, f) => { const p = { ...P }; p[k] *= f; return log10T(QT.transmission(p.E, p.V0, p.a)) - base; };
+    const eff = (k, f) => { const p = { ...P }; p[k] *= f; return log10T(Tm(p.E, p.V0, p.a)) - base; };
     const up = KEYS.map((k) => eff(k, 1.1)), dn = KEYS.map((k) => eff(k, 0.9));
     Plotly.react("plot6c", [
       { type: "bar", orientation: "h", y: KEYS.map((k) => names[k]), x: up, name: "+10 %", marker: { color: C.violet }, hovertemplate: "%{y} +10%: Δlog₁₀T = %{x:.4f}<extra></extra>" },
@@ -392,7 +525,7 @@
     ], baseLayout({
       barmode: "group", margin: { l: 100, r: 20, t: 40, b: 50 },
       title: { text: "Sensitivity at current controls: Δlog₁₀(T) for a ±10 % change", font: { size: 14 } },
-      xaxis: { title: "Δ log₁₀(T)  (+ = more transmission)", gridcolor: C.grid, zerolinecolor: "#fff" }, yaxis: { gridcolor: C.grid },
+      xaxis: { title: "Δ log₁₀(T)  (+ = more transmission)", gridcolor: C.grid, zerolinecolor: "#9e3b6f" }, yaxis: { gridcolor: C.grid },
     }), CFG);
     const mags = KEYS.map((k, i) => Math.max(Math.abs(up[i]), Math.abs(dn[i])));
     const top = KEYS[mags.indexOf(Math.max(...mags))];
@@ -435,12 +568,160 @@
     add("Boundary: above-barrier resonance (qa = π)", "T = 1 although E > V₀ in general gives R > 0", `T(E=12, a=π/q=${fmt(Math.PI / qq, 4)} nm) = ${Tres.toFixed(10)}; at a = 0.10 nm T = ${QT.transmission(12, 10, 0.1).toFixed(4)}`, Math.abs(Tres - 1) < 1e-9);
     let threw = false; try { QT.transmission(-1, 10, 0.1); } catch (e) { threw = true; }
     add("Invalid input handling", "E ≤ 0 is rejected and reported, never silently replaced", threw ? "rejected with message" : "accepted (bug)", threw);
-    $("verify-table").innerHTML = "<tr><th>Check</th><th>Pass criterion</th><th>Observed</th><th>Status</th></tr>" +
-      rows.map((r) => `<tr><td>${r.name}</td><td>${r.criterion}</td><td>${r.observed}</td><td class="${r.pass ? "pass" : "fail"}">${r.pass ? "PASS" : "FAIL"}</td></tr>`).join("");
+    verifyRows = rows; renderVerify();
   }
+  let verifyRows = [];
+  function renderVerify() {
+    $("verify-table").innerHTML = "<tr><th>Check</th><th>Pass criterion</th><th>Observed</th><th>Status</th></tr>" +
+      verifyRows.map((r) => `<tr><td>${r.name}</td><td>${r.criterion}</td><td>${r.observed}</td><td class="${r.pass ? "pass" : "fail"}">${r.pass ? "PASS" : "FAIL"}</td></tr>`).join("");
+  }
+
+  // ======================= VIEW 7: dataset cross-check =======================
+  const KN = QT.K_NATURAL;
+  let dQ = "dens";
+  const REGCOL = { tunneling: C.cyan, resonance: C.amber, over_barrier: C.violet };
+  const COMBO_COLORS = ["#e65d8f", "#ff9ec8", "#a56ad9", "#c3a2ff", "#5f8ee8", "#2fb7ad", "#d99028", "#f4b860", "#b565a7", "#7d5ba6", "#5aa9a4", "#d66fba"];
+
+  async function loadData() {
+    const st = $("data-status");
+    try {
+      const urls = ["datasets/quantum_tunneling_summary.csv", "datasets/quantum_tunneling_wavefunction_profiles.csv"];
+      const [ta, tb] = await Promise.all(urls.map((u) => fetch(u).then((r) => { if (!r.ok) throw new Error(u + " → HTTP " + r.status); return r.text(); })));
+      const raw = window.CSV.parse(ta);
+      const sum = raw.map((r) => ({ id: r.sim_id, E: +r.particle_energy, V0: +r.barrier_height, a: +r.barrier_width, T: +r.transmission_probability, R: +r.reflection_probability, regime: r.regime }))
+        .filter((r) => [r.E, r.V0, r.a, r.T, r.R].every(Number.isFinite));   // missing / non-numeric rows are dropped and counted
+      const dropped = raw.length - sum.length;
+      const groups = new Map();
+      for (const r of window.CSV.parse(tb)) {
+        if (!groups.has(r.scenario_name)) groups.set(r.scenario_name, { name: r.scenario_name, E: +r.particle_energy, V0: +r.barrier_height, a: +r.barrier_width, T: +r.transmission_probability, x: [], dens: [], re: [], im: [], region: [] });
+        const g = groups.get(r.scenario_name);
+        g.x.push(+r.position); g.dens.push(+r.probability_density); g.re.push(+r.wavefunction_real); g.im.push(+r.wavefunction_imag); g.region.push(r.spatial_region);
+      }
+      DS = { sum, dropped, groups: [...groups.values()], V0s: [...new Set(sum.map((r) => r.V0))].sort((a, b) => a - b), as: [...new Set(sum.map((r) => r.a))].sort((a, b) => a - b) };
+      const fill = (id, vals, def) => { $(id).innerHTML = vals.map((v) => `<option value="${v}"${v === def ? " selected" : ""}>${v}</option>`).join(""); };
+      fill("d-V0", DS.V0s, 5); fill("d-a", DS.as, DS.as.includes(1.5) ? 1.5 : DS.as[0]);
+      $("d-prof").innerHTML = DS.groups.map((g, i) => `<option value="${i}">${g.name}</option>`).join("");
+      st.innerHTML = `Loaded <b>${sum.length}</b> summary records (${DS.V0s.length} barrier heights × ${DS.as.length} widths × energy sweep; ${dropped} dropped for missing values) and <b>${DS.groups.length}</b> wavefunction profiles (${DS.groups.reduce((s, g) => s + g.x.length, 0)} points). <b>Source:</b> the tunneling portion of <i>Quantum Gatekeeper</i> (Ponze, 2026, unpublished research dataset) — a separate project from this one; its IBM Quantum hardware records are not used here.`;
+      renderView7(); addDatasetVerification();
+      $("src-data").disabled = false; $("src-data").title = "Switch Views 1–6 to dimensionless units with the dataset overlaid";
+    } catch (e) {
+      st.className = "note warn";
+      st.innerHTML = "Could not load the datasets (" + e.message + "). Serve the folder over http, e.g. <code>python -m http.server</code> — browsers block fetch() on file:// pages.";
+    }
+  }
+
+  function datasetStats() {
+    let worstT = 0, worstSum = 0, worstId = "";
+    for (const r of DS.sum) {
+      const d = Math.abs(QT.transmission(r.E, r.V0, r.a, KN) - r.T);
+      if (d > worstT) { worstT = d; worstId = r.id; }
+      worstSum = Math.max(worstSum, Math.abs(r.T + r.R - 1));
+    }
+    let worstDens = 0, pts = 0;
+    for (const g of DS.groups) {
+      const w = QT.psi(QT.solveState(g.E, g.V0, g.a, KN), g.x);
+      g.x.forEach((_, i) => { worstDens = Math.max(worstDens, Math.abs(w.re[i] ** 2 + w.im[i] ** 2 - g.dens[i])); pts++; });
+    }
+    return { worstT, worstSum, worstId, worstDens, pts };
+  }
+  function addDatasetVerification() {
+    const s = datasetStats();
+    verifyRows.push(
+      { name: "Dataset cross-check: summary table", criterion: "JS model (K = √2) reproduces every recorded T (|ΔT| < 5e-5; data rounded to 6 d.p.)",
+        observed: `${DS.sum.length} records, worst |ΔT| = ${s.worstT.toExponential(2)} (${s.worstId})`, pass: s.worstT < 5e-5 },
+      { name: "Dataset integrity: R + T = 1", criterion: "every record satisfies |T + R − 1| < 1e-5; no missing values",
+        observed: `max error = ${s.worstSum.toExponential(2)}; ${DS.dropped} rows dropped`, pass: s.worstSum < 1e-5 && DS.dropped === 0 },
+      { name: "Dataset cross-check: wavefunction profiles", criterion: "live |ψ(x)|² equals dataset at every position (|Δ| < 2e-3)",
+        observed: `${DS.groups.length} scenarios, ${s.pts} points, worst |Δ|ψ|²| = ${s.worstDens.toExponential(2)}`, pass: s.worstDens < 2e-3 });
+    renderVerify();
+  }
+
+  function renderView7() {
+    if (!DS) return;
+    const V0 = parseFloat($("d-V0").value), a = parseFloat($("d-a").value), all = $("d-all").checked, logT = $("d-log").checked;
+    const combos = [];
+    DS.V0s.forEach((v) => DS.as.forEach((w) => combos.push([v, w])));
+    const Es = QT.linspace(0.05, 10.05, 400);
+    const traces = [];
+    const hov = (r) => `${r.id}<br>E = ${r.E}, V₀ = ${r.V0}, a = ${r.a}<br>T = ${r.T}<br>R = ${r.R}<br>regime: ${r.regime}`;
+    let sel = DS.sum.filter((r) => r.V0 === V0 && r.a === a);
+    if (all) {
+      combos.forEach(([v, w], i) => {
+        const rs = DS.sum.filter((r) => r.V0 === v && r.a === w), isSel = v === V0 && w === a, col = COMBO_COLORS[i % 12];
+        traces.push({ x: rs.map((r) => r.E), y: rs.map((r) => r.T), mode: "markers", name: `V₀=${v}, a=${w}`, legendgroup: `c${i}`, marker: { size: isSel ? 6 : 4, color: col, opacity: isSel ? 1 : 0.65 }, customdata: rs.map((r) => r.id), text: rs.map(hov), hovertemplate: "%{text}<extra></extra>" });
+        traces.push({ x: Es, y: Es.map((e) => QT.transmission(e, v, w, KN)), mode: "lines", legendgroup: `c${i}`, showlegend: false, line: { color: col, width: isSel ? 2.5 : 1 }, hoverinfo: "skip" });
+      });
+    } else {
+      for (const reg of ["tunneling", "resonance", "over_barrier"]) {
+        const rs = sel.filter((r) => r.regime === reg);
+        if (rs.length) traces.push({ x: rs.map((r) => r.E), y: rs.map((r) => r.T), mode: "markers", name: "data: " + reg.replace("_", "-"), marker: { size: 6, color: REGCOL[reg] }, customdata: rs.map((r) => r.id), text: rs.map(hov), hovertemplate: "%{text}<extra></extra>" });
+      }
+      traces.push({ x: Es, y: Es.map((e) => QT.transmission(e, V0, a, KN)), mode: "lines", name: "live model", line: { color: "#9e3b6f", width: 1.8, dash: "dot" }, hovertemplate: "model<br>E = %{x:.2f}<br>T = %{y:.5g}<extra></extra>" });
+    }
+    // 12 sweeps need room: taller plots and the legend moved to the right of the axes
+    ["plot7a", "plot7b"].forEach((id) => { $(id).style.height = all ? "680px" : ""; });
+    Plotly.react("plot7a", traces, baseLayout({
+      ...(all ? { legend: { orientation: "v", x: 1.02, y: 1, xanchor: "left", font: { size: 11 } }, margin: { l: 62, r: 150, t: 70, b: 52 } } : {}),
+      title: { text: "Transmission vs. energy: dataset records vs. live model (natural units)", font: { size: 14 } },
+      xaxis: { title: "Particle energy E (dimensionless, ħ = m = 1)", gridcolor: C.grid },
+      yaxis: logT ? { type: "log", title: "T (log scale)", gridcolor: C.grid } : { title: "Transmission probability T", range: [0, 1.05], gridcolor: C.grid },
+      shapes: all ? [] : [{ type: "line", x0: V0, x1: V0, y0: 0, y1: 1, yref: "paper", line: { color: C.amber, dash: "dash", width: 1 } }],
+      annotations: all ? [] : [{ x: V0, y: 1, yref: "paper", text: "E = V₀", showarrow: false, xanchor: "left", yanchor: "top", font: { color: C.amber, size: 11 } }],
+    }), CFG);
+
+    const g = DS.groups[+$("d-prof").value];
+    const st = QT.solveState(g.E, g.V0, g.a, KN);
+    const xm = QT.linspace(g.x[0], g.x[g.x.length - 1], 700), wm = QT.psi(st, xm), wd = QT.psi(st, g.x);
+    const pick = { dens: ["|ψ(x)|² (relative)", (w) => Array.from(w.re, (r, i) => r * r + w.im[i] * w.im[i]), g.dens], re: ["Re ψ(x)", (w) => Array.from(w.re), g.re], im: ["Im ψ(x)", (w) => Array.from(w.im), g.im] }[dQ];
+    const dataY = pick[2], modelAtData = pick[1](wd);
+    const ymax = Math.max(...dataY.map(Math.abs), ...pick[1](wm).map(Math.abs)) * 1.15 + 1e-6;
+    const ymin = dQ === "dens" ? 0 : -ymax;
+    Plotly.react("plot7b", [
+      { x: xm, y: pick[1](wm), mode: "lines", name: "live model", line: { color: "#9e3b6f", width: 1.8 }, hoverinfo: "skip" },
+      { x: g.x, y: dataY, mode: "markers", name: "dataset", marker: { size: 4.5, color: C.cyan, opacity: 0.85 }, text: g.region,
+        hovertemplate: "x = %{x:.3f}<br>" + pick[0] + " = %{y:.5f}<br>%{text}<extra>dataset</extra>" },
+    ], baseLayout({
+      title: { text: g.name, font: { size: 14 } },
+      xaxis: { title: "Position x (dimensionless)", gridcolor: C.grid }, yaxis: { title: pick[0], gridcolor: C.grid, range: [ymin, ymax] },
+      shapes: [{ type: "rect", x0: 0, x1: g.a, y0: ymin, y1: ymax, fillcolor: "rgba(167,139,250,.2)", line: { color: C.violet, width: 1 } }],
+    }), CFG);
+
+    const sdiff = Math.max(0, ...sel.map((r) => Math.abs(QT.transmission(r.E, r.V0, r.a, KN) - r.T)));
+    const gs = datasetStats();
+    const pdiff = Math.max(...dataY.map((v, i) => Math.abs(v - modelAtData[i])));
+    const row = (l, v, cls = "") => `<div class="stat ${cls}"><span>${l}</span><b>${v}</b></div>`;
+    $("d-stats").innerHTML =
+      row("Records in this sweep", sel.length + " (E = " + Math.min(...sel.map((r) => r.E)) + "–" + Math.max(...sel.map((r) => r.E)) + ")") +
+      row("Sweep: max |T_data − T_model|", sdiff.toExponential(2), sdiff < 5e-5 ? "good" : "bad") +
+      row("All " + DS.sum.length + " records: max |ΔT|", gs.worstT.toExponential(2), gs.worstT < 5e-5 ? "good" : "bad") +
+      row("Regime counts (all)", ["tunneling", "over_barrier", "resonance"].map((k) => k.replace("_", "-") + " " + DS.sum.filter((r) => r.regime === k).length).join(" · ")) +
+      row("Profile T: dataset / model", g.T + " / " + st.T_num.toFixed(6)) +
+      row("Profile: max |data − model| (" + pick[0] + ")", pdiff.toExponential(2), pdiff < 2e-3 ? "good" : "bad");
+    Plotly.Plots.resize($("plot7a")); Plotly.Plots.resize($("plot7b"));
+    const g7 = $("plot7a");
+    g7.removeAllListeners && g7.removeAllListeners("plotly_click");
+    g7.on("plotly_click", (ev) => {              // click any dot -> load that record into Views 1–6
+      const pt = ev.points && ev.points[0], rec = pt && DS.sum.find((r) => r.id === pt.customdata);
+      if (rec) loadIntoViews(rec);
+    });
+  }
+  ["d-V0", "d-a", "d-prof"].forEach((id) => $(id).addEventListener("change", renderView7));
+  function loadIntoViews(s) {
+    if (MODE.key !== "data") setMode("data");
+    setParams({ E: s.E, V0: s.V0, a: s.a });
+    $("view1").scrollIntoView({ behavior: "smooth" });
+  }
+  $("d-load-prof").addEventListener("click", () => { if (DS) loadIntoViews(DS.groups[+$("d-prof").value]); });
+  ["d-log", "d-all"].forEach((id) => $(id).addEventListener("change", renderView7));
+  document.querySelectorAll("#view7 .seg-btn").forEach((b) => b.addEventListener("click", () => {
+    dQ = b.dataset.q;
+    document.querySelectorAll("#view7 .seg-btn").forEach((x) => x.classList.toggle("active", x === b));
+    renderView7();
+  }));
 
   // ---------- boot ----------
   KEYS.forEach(syncInputs);
   update();
   runVerification();
+  loadData();
 })();

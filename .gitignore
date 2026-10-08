@@ -1,0 +1,30 @@
+# Environment files and local secrets
+.env
+.env.*
+!.env.example
+
+# Dependencies and package-manager caches
+node_modules/
+.npm/
+.pnpm-store/
+
+# Python local files
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+
+# Test, coverage, and build output
+coverage/
+dist/
+build/
+
+# Local OS/editor files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Local logs
+*.log

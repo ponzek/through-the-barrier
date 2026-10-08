@@ -19,6 +19,11 @@
   <p class="subtitle">An interactive story of quantum tunneling</p>
   <p class="question">How can a quantum particle have a nonzero probability of crossing a barrier it
     classically cannot — and which physical parameters control that probability?</p>
+  <div class="hero-summary" aria-label="Plain-language summary">
+    <div><b>Particle</b><span>A tiny object described by a wave, not a little ball with one exact path.</span></div>
+    <div><b>Barrier</b><span>A region where the potential energy is higher than the particle energy.</span></div>
+    <div><b>Tunneling</b><span>The wave leaks through, so the crossing probability T can be small but not zero.</span></div>
+  </div>
   <p class="byline">Karina Ponze · Kean University</p>
 </header>
 
@@ -26,13 +31,13 @@
 <aside class="controls" id="controls" aria-label="Shared model controls">
   <div class="ctl-title">Shared parameters <span class="hint">every view updates together</span></div>
   <div class="ctl-grid">
-    <label class="ctl" for="E-range"><span>Particle energy <b>E</b> (eV)</span>
+    <label class="ctl" for="E-range"><span id="E-lbl">Particle energy <b>E</b> (eV)</span>
       <div class="ctl-row"><input type="range" id="E-range" min="0.5" max="15" step="0.1" value="8">
       <input type="number" id="E-num" min="0.01" step="0.1" value="8"></div></label>
-    <label class="ctl" for="V0-range"><span>Barrier height <b>V₀</b> (eV)</span>
+    <label class="ctl" for="V0-range"><span id="V0-lbl">Barrier height <b>V₀</b> (eV)</span>
       <div class="ctl-row"><input type="range" id="V0-range" min="1" max="20" step="0.1" value="10">
       <input type="number" id="V0-num" min="0.01" step="0.1" value="10"></div></label>
-    <label class="ctl" for="a-range"><span>Barrier width <b>a</b> (nm)</span>
+    <label class="ctl" for="a-range"><span id="a-lbl">Barrier width <b>a</b> (nm)</span>
       <div class="ctl-row"><input type="range" id="a-range" min="0.02" max="1" step="0.01" value="0.1">
       <input type="number" id="a-num" min="0.001" step="0.01" value="0.1"></div></label>
     <div class="ctl-actions">
@@ -40,10 +45,34 @@
       <div id="regime-pill" class="pill">—</div>
     </div>
   </div>
+  <div class="src-row">
+    <span class="lbl">Data source</span>
+    <div class="seg" role="group" aria-label="Data source for Views 1–6">
+      <button id="src-model" class="seg-btn active" title="Analytic electron model in eV and nm">Main model</button>
+      <button id="src-data" class="seg-btn" disabled title="Loading dataset…">Dataset check</button>
+    </div>
+    <span id="data-row" class="src-extra" hidden>
+      <span id="data-match" class="pill">—</span>
+      <button id="snap-btn" class="btn small ghost" hidden>Snap to nearest record</button>
+    </span>
+  </div>
   <div id="error-box" class="error-box" role="alert" hidden></div>
 </aside>
 
 <main>
+
+<section class="orientation" aria-label="Project guide">
+  <div>
+    <span class="lbl">Start here</span>
+    <h2>Read the page as a three-step story.</h2>
+    <p>First compare the classical yes/no answer with the quantum probability. Then inspect the wavefunction and probability density to see why crossing is possible. Finally use the explorer, scenarios, dataset, and verification table to test whether the model behaves correctly.</p>
+  </div>
+  <div class="guide-grid">
+    <div><b>Change E, V₀, and a</b><span>Energy, barrier height, and barrier width update every view.</span></div>
+    <div><b>Watch T</b><span>T is the transmission probability: 0 means none cross, 1 means all cross.</span></div>
+    <div><b>Use the dataset last</b><span>The extra Quantum Gatekeeper data is a simulation cross-check, not the main lesson.</span></div>
+  </div>
+</section>
 
 <!-- ============ BEGINNING ============ -->
 <section class="act" id="act1">
@@ -61,8 +90,8 @@
           <div><span class="lbl">Classical T</span><b id="v1-classical-T">—</b></div>
           <div><span class="lbl">Quantum T</span><b id="v1-quantum-T">—</b></div>
         </div>
-        <p class="note">Classically a particle is either reflected (E &lt; V₀) or passes (E &gt; V₀) — T is exactly 0 or 1. Move <b>E</b> across <b>V₀</b>, then watch what quantum mechanics predicts instead.</p>
-        <p class="note warn">The diagram plots <b>potential energy</b>. The barrier is <i>not</i> a physical wall, and <b>E</b> (dashed line) is the particle's total energy.</p>
+        <p class="note"><b>Classical idea.</b> A particle either reflects when E &lt; V₀ or passes when E &gt; V₀, so T is exactly 0 or 1. Move <b>E</b> across <b>V₀</b>, then compare that with the quantum value.</p>
+        <p class="note warn"><b>Important.</b> This plot shows <b>potential energy</b>. The barrier is not a literal wall; it is a region where the particle would need more energy in classical mechanics.</p>
       </div>
     </div>
   </article>
@@ -89,8 +118,8 @@
       </div>
       <div class="side">
         <div class="region-card" id="region-card"></div>
-        <p class="note">Solid line: <b>Re[ψ(x)·e<sup>−iφ</sup>]</b>. The shaded envelope is |ψ(x)|, which does <i>not</i> move.</p>
-        <p class="note warn">The animation is the <b>phase evolution of a stationary state</b> (e<sup>−iEt/ħ</sup> → φ). It is <i>not</i> a particle trajectory and the displayed R and T never depend on it.</p>
+        <p class="note"><b>What you are seeing.</b> The solid line is one phase of the wavefunction, <b>Re[ψ(x)e<sup>−iφ</sup>]</b>. The shaded envelope is |ψ(x)|, the part that shows how large the wave can be at each position.</p>
+        <p class="note warn"><b>Not a path.</b> The animation changes the phase of a stationary state. It does not show a particle traveling across the screen, and R and T do not change with the animation.</p>
       </div>
     </div>
   </article>
@@ -103,8 +132,8 @@
       <div class="plot-wrap"><div id="plot3" class="plot"></div></div>
       <div class="side">
         <div class="stat-list" id="v3-stats"></div>
-        <p class="note">Hover to read actual values. Left of the barrier, incident and reflected waves interfere, so |ψ|² ripples between (1−√R)² and (1+√R)². Right of the barrier it is flat at <b>T</b>.</p>
-        <p class="note warn">Scattering states are not square-normalizable, so |ψ|² is a <b>relative</b> density (incident amplitude = 1), not an absolute position probability.</p>
+        <p class="note"><b>How to read it.</b> Higher |ψ|² means the wave has more relative presence there. Left of the barrier, incoming and reflected waves interfere; right of the barrier, the flat level equals <b>T</b>.</p>
+        <p class="note warn"><b>Relative scale.</b> These scattering states are not normalizable like a bound electron, so |ψ|² is relative density with incident amplitude set to 1.</p>
       </div>
     </div>
   </article>
@@ -112,12 +141,15 @@
   <article class="view" id="view4">
     <div class="view-head"><span class="num">4</span>
       <div><h2>Reflection versus transmission</h2>
-      <p class="q">How much of the incident probability current is reflected, and how much transmitted?</p></div></div>
+      <p class="q">Out of 100 simulated particles, how many reflect from the barrier and how many pass through?</p></div></div>
     <div class="view-body">
-      <div class="plot-wrap"><div id="plot4" class="plot short"></div></div>
+      <div class="plot-wrap">
+        <div id="v4-simple" class="result-panel" aria-live="polite"></div>
+      </div>
       <div class="side">
         <div class="stat-list" id="v4-stats"></div>
-        <p class="note">R and T are computed two ways: from the closed-form formula and from the solved wavefunction coefficients (|B|², |F|²). Their agreement and R + T = 1 are shown live.</p>
+        <p class="note"><b>Plain English.</b> “Reflect” means the simulated particle is predicted to turn around at the barrier. It does not mean any dataset was sent back to Quantum Gatekeeper.</p>
+        <p class="note"><b>Model check.</b> The formula and wavefunction solver still run in the background. The side panel tells you if they match.</p>
         <p class="note warn"><b>Tunneling does not cost energy.</b> A transmitted particle leaves with the same E it arrived with; only the <i>probability</i> of transmission is reduced.</p>
       </div>
     </div>
@@ -132,16 +164,16 @@
         <div class="toggle-row">
           <div class="seg" role="group" aria-label="View 5 representation">
             <button id="seg-2d" class="seg-btn active">2D heatmap</button>
-            <button id="seg-3d" class="seg-btn">3D surface</button>
+            <button id="seg-3d" class="seg-btn" disabled title="Disabled for stability; the 2D map is the accurate click/load view.">3D paused</button>
           </div>
-          <span class="readout">Click the map to move the marker (sets V₀ and a)</span>
+          <span class="readout" id="v5-click-help">Click the 2D map or a dataset square to load that state</span>
         </div>
         <div id="plot5" class="plot tall"></div>
       </div>
       <div class="side">
         <div class="stat-list" id="v5-stats"></div>
-        <p class="note">Color is <b>log₁₀(T)</b>, not T: transmission spans many orders of magnitude, so a linear scale would hide small but real values. <b>Equal color steps mean equal <i>ratios</i> of T.</b> The slider E sets the energy for the whole map.</p>
-        <p class="note">The 3D surface is offered as an alternative per the approved proposal; the 2D map stays primary because exact values are easier to read.</p>
+        <p class="note"><b>Color scale.</b> Color is <b>log₁₀(T)</b>, not T, because tunneling probabilities can shrink extremely fast. Equal color steps mean equal ratios of T.</p>
+        <p class="note">Use this 2D heatmap for the dataset squares. The 3D surface used the same values, but it was heavy and not useful for accurate clicking, so it is paused here.</p>
       </div>
     </div>
   </article>
@@ -155,6 +187,14 @@
     <div class="view-head"><span class="num">6</span>
       <div><h2>Scenario comparison &amp; takeaway</h2>
       <p class="q">Which conditions make tunneling more or less likely?</p></div></div>
+
+    <div class="compare-guide" aria-label="How to use scenario comparison">
+      <div><b>A and B are two saved cases.</b><span>Use presets or save the current sliders into A or B.</span></div>
+      <div><b>Compare T first.</b><span>The taller Transmission T bar is the case where more particles get through.</span></div>
+      <div><b>Then read the takeaway.</b><span>The final chart shows which variable matters most near the current sliders.</span></div>
+    </div>
+
+    <div id="scenario-summary" class="scenario-summary" aria-live="polite"></div>
 
     <div class="scn-toolbar">
       <div class="scn-block"><span class="tag a">A</span>
@@ -180,6 +220,40 @@
       <div class="side">
         <div class="takeaway" id="takeaway"></div>
         <p class="note">The sensitivity bars change each parameter by ±10 % around the <b>current</b> controls and report the change in log₁₀(T) — a direct answer to “which variable matters most here?”.</p>
+      </div>
+    </div>
+  </article>
+
+  <article class="view" id="view7">
+    <div class="view-head"><span class="num">7</span>
+      <div><h2>Data cross-check: simulation dataset vs. live model</h2>
+      <p class="q">Does an independently generated simulation dataset agree with the equations behind Views 1–6?</p></div></div>
+    <div id="data-status" class="note">Loading datasets…</div>
+    <div class="scn-toolbar">
+      <div class="scn-block"><span class="lbl">Left chart · energy sweep</span>
+        <label class="ctl-inline">V₀ <select id="d-V0" aria-label="Dataset barrier height"></select></label>
+        <label class="ctl-inline">a <select id="d-a" aria-label="Dataset barrier width"></select></label>
+        <label class="check"><input type="checkbox" id="d-log"> log scale for T</label>
+        <label class="check"><input type="checkbox" id="d-all"> show all 12 sweeps</label></div>
+      <div class="scn-block"><span class="lbl">Right chart · wavefunction profile</span>
+        <select id="d-prof" aria-label="Dataset wavefunction scenario"></select>
+        <button id="d-load-prof" class="btn small ghost" title="Send this scenario to the shared controls so Views 1–6 show it with the dataset overlaid">Load into Views 1–6</button>
+        <div class="seg" role="group" aria-label="Quantity">
+          <button class="seg-btn active" data-q="dens">|ψ|²</button>
+          <button class="seg-btn" data-q="re">Re ψ</button>
+          <button class="seg-btn" data-q="im">Im ψ</button></div></div>
+    </div>
+    <div class="view-body two">
+      <div class="plot-wrap"><div id="plot7a" class="plot tall"></div></div>
+      <div class="plot-wrap"><div id="plot7b" class="plot tall"></div></div>
+    </div>
+    <div class="view-body">
+      <div class="stat-list two-col" id="d-stats"></div>
+      <div class="side">
+        <p class="note"><b>Purpose.</b> This view checks whether an independently generated simulation dataset follows the same equations as the live model. Dots are saved records; white lines are recomputed in the browser.</p>
+        <p class="note warn"><b>Units.</b> The dataset uses dimensionless natural units (ħ = m = 1). The main model uses eV and nm. The equations are the same, but the constant that converts energy into wave number changes.</p>
+        <p class="note"><b>Dataset provenance.</b> <i>Quantum Gatekeeper</i> is an unpublished research dataset created by Karina Ponze (2026) for a different project. Only its tunneling-simulation records are used here; IBM Quantum hardware records are not included.</p>
+        <p class="note">Dots are the supplied simulation records (hover for sim ID, T, R, regime); lines are recomputed live by <code>physics.js</code>. “Resonance” is the dataset's label for over-barrier records with T &gt; 0.99.</p>
       </div>
     </div>
   </article>
@@ -216,9 +290,11 @@
 <footer>
   <p><b>Through the Barrier</b> · Karina Ponze · CPS 5745 Midterm Project · Sources: Griffiths &amp; Schroeter (2018); OpenStax <i>University Physics Vol. 3</i> §7.6; McKagan, Perkins &amp; Wieman (2008); Wittmann, Morgan &amp; Bao (2005); PhET Quantum Tunneling and Wave Packets.</p>
   <p class="dim">Generative AI assisted with implementation scaffolding; all equations were checked against the cited sources and an independent Python reference (see <code>tests/</code>).</p>
+  <p class="dim">View 7 data: Ponze, K. (2026). <i>Quantum Gatekeeper</i> (tunneling-simulation portion). Unpublished research dataset from a separate project.</p>
 </footer>
 
 <script src="physics.js"></script>
+<script src="csv.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

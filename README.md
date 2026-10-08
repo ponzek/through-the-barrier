@@ -1,54 +1,90 @@
-# Through the Barrier — An Interactive Story of Quantum Tunneling
+# Through the Barrier
 
-CPS 5745 Midterm Project · Karina Ponze · Kean University
+An interactive quantum tunneling explainer for CPS 5745.
 
-A six-view interactive scientific story (classical expectation → wavefunction → relative
-probability density → reflection vs. transmission → parameter explorer → scenario comparison)
-for a 1D finite rectangular barrier. Implements the approved proposal (CPS5745_Wk3As3.pdf).
+This project helps people understand a simple question:
 
-## Launch
+> If a particle does not have enough classical energy to cross a barrier, why can quantum mechanics still give it a chance to pass through?
 
-No build step and no install. Needs internet only for the Plotly CDN and Google Fonts.
+The app uses a one-dimensional rectangular barrier model. It lets users change particle energy, barrier height, and barrier width, then shows how those choices affect reflection and transmission.
 
-```
-cd app
+## Open the App
+
+From this folder:
+
+```bash
 python -m http.server 8765
-# open http://localhost:8765/index.html
 ```
 
-Opening `index.html` directly in a browser also works. For the hosted version, push the `app/`
-folder to GitHub Pages (Settings → Pages → deploy from branch → `/app` or move files to `/docs`).
+Then open:
+
+```text
+http://localhost:8765/index.html
+```
+
+No install or build step is required. The app uses Plotly from a CDN, so internet access is needed for the charts.
+
+## What the Views Do
+
+1. **Classical expectation**  
+   Shows what classical physics would predict: pass through or reflect.
+
+2. **Quantum wavefunction**  
+   Shows the wave behavior that makes tunneling possible.
+
+3. **Relative probability density**  
+   Shows where the wave is larger or smaller around the barrier.
+
+4. **Reflection versus transmission**  
+   Gives the main answer in plain English: out of 100 simulated particles, how many reflect from the barrier and how many pass through.
+
+5. **Barrier parameter explorer**  
+   Shows how changing barrier height and width changes transmission. The 2D heatmap is the accurate click/load view.
+
+6. **Scenario comparison**  
+   Compares two saved cases, A and B, and explains which one allows more tunneling.
+
+7. **Dataset cross-check**  
+   Compares the live model against saved simulation records from the tunneling portion of my separate **Quantum Gatekeeper** dataset.
+
+## Important Note About Quantum Gatekeeper
+
+The Quantum Gatekeeper data used here is a local simulation dataset. It is used only as an independent check that this app's tunneling model produces the same results as saved simulation records.
+
+This app does **not** send data to Quantum Gatekeeper, IBM Quantum, or any external hardware.
+
+In this project:
+
+- **Reflection** means the simulated particle is predicted to reflect from the barrier.
+- **Transmission** means the simulated particle is predicted to pass through the barrier.
+- These words describe physics outcomes, not data being sent somewhere and returned.
+
+The IBM Quantum hardware records from Quantum Gatekeeper are not included in this app.
 
 ## Files
 
-| File | Purpose |
-|---|---|
-| `index.html`, `style.css` | Page structure and design |
-| `physics.js` | Model: Eq. (5), (7), complex 4×4 boundary solve, ψ(x), validation |
-| `app.js` | The six views, linked controls, animation, scenarios, live verification |
-| `tests/make_reference.py` | Independent stdlib-Python reference values (mirrors the notebook) |
-| `tests/test_physics.js` | Node test: JS vs. Python reference, R+T=1, boundary cases |
-| `../Through_the_Barrier_Quantum_Tunneling.ipynb` | Original Python prototype / reference |
+| File or folder | Purpose |
+| --- | --- |
+| `index.html` | Page structure |
+| `style.css` | Light visual design and layout |
+| `app.js` | Interactive views, controls, dataset mode, and live checks |
+| `physics.js` | Quantum tunneling equations and wavefunction solver |
+| `csv.js` | Small CSV parser for dataset loading |
+| `datasets/` | Saved Quantum Gatekeeper tunneling simulation records |
+| `tests/` | Physics, dataset, and smoke tests |
 
-## Data / model workflow
+## Run Checks
 
-User parameters (E, V₀, a) → validation → solve 4×4 complex boundary-condition system (A=1) →
-ψ(x), |ψ|², R=|B|², T=|F|² → cross-check against closed-form T → six linked plots.
-No observational data: it is a documented scientific simulation (equations on the page).
-
-## Run the tests
-
-```
-python tests/make_reference.py
+```bash
 node tests/test_physics.js
+node tests/test_datasets.js
+node tests/smoke_app.js
 ```
 
-The same checks (plus a 400-state random R+T=1 sweep) also run live at the bottom of the page.
+Expected result: all tests pass.
 
-## Interactions
+## Project Result
 
-1. Change E, V₀, a with sliders or validated number boxes (invalid input is reported, not replaced).
-2. Inspect values: hover on any plot, heatmap/surface, or read the stat panels.
-3. Compare scenarios: save A/B, load presets, log-scale toggle.
-4. Reset (parameters), Play/Pause/Step/Phase-0 (View 2 phase animation, shared with View 6).
-5. Click the View 5 heatmap to move the marker (sets V₀ and a). 2D/3D toggle.
+The app shows that the live tunneling model agrees with the saved Quantum Gatekeeper simulation records. This supports that the equations, implementation, and dataset interpretation are consistent.
+
+For the selected dataset states, the app recomputes transmission and reflection locally and compares them with the saved records.
